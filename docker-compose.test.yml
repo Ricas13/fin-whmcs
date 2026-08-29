@@ -15,7 +15,7 @@ services:
       - "33067:3306"
 
   jellyfin:
-    image: jellyfin/jellyfin:10.11.11
+    image: jellyfin/jellyfin:${CAPTAINFIN_TEST_JELLYFIN_IMAGE_TAG:-10.11.11}
     ports:
       - "18096:8096"
     volumes:
