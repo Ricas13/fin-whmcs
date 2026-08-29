@@ -1,0 +1,1 @@
+The fake WHMCS layer exists only to unblock deterministic module-domain tests. It must never be described as a substitute for final testing on a licensed supported WHMCS release.
