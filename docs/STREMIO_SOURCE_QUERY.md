@@ -1,0 +1,1 @@
+Source audit target: locate all Stremio ownership/mutations in `Ricas13/fin-fusion` before implementing the concrete WHMCS adapter.
