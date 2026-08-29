@@ -82,6 +82,14 @@ final class JellyfinClient
         return $result;
     }
 
+    public function renameUser(string $userId, string $username): void
+    {
+        $this->http->request('/Users/' . rawurlencode($userId), 'POST', [
+            'Id' => $userId,
+            'Name' => $username,
+        ]);
+    }
+
     public function setPolicy(string $userId, array $policy): void
     {
         $this->http->request('/Users/' . rawurlencode($userId) . '/Policy', 'POST', $policy);
