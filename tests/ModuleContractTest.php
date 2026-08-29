@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CaptainFin\Whmcs\Tests;
 
 use CaptainFin\Whmcs\Domain\OperationState;
+use CaptainFin\Whmcs\Infrastructure\Database\Schema;
 use PHPUnit\Framework\TestCase;
 
 final class ModuleContractTest extends TestCase
@@ -45,6 +46,20 @@ final class ModuleContractTest extends TestCase
         $metadata = captainfin_MetaData();
         self::assertSame('CAPTAiNFiN', $metadata['DisplayName']);
         self::assertTrue($metadata['RequiresServer']);
+    }
+
+    public function testAddonExposesActivationUpgradeAndNonDestructiveDeactivationSurface(): void
+    {
+        require_once dirname(__DIR__) . '/modules/addons/captainfin/captainfin.php';
+
+        self::assertTrue(function_exists('captainfin_activate'));
+        self::assertTrue(function_exists('captainfin_upgrade'));
+        self::assertTrue(function_exists('captainfin_deactivate'));
+        self::assertGreaterThanOrEqual(2, Schema::VERSION);
+
+        $config = captainfin_config();
+        self::assertSame('CAPTAiNFiN', $config['name']);
+        self::assertSame('0.2.0-dev', $config['version']);
     }
 
     public function testProductOptionsContainEstablishedJellyfinManagementBaseline(): void
