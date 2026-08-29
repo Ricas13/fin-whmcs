@@ -1,0 +1,1 @@
+Disposable service containers are accessed only by the local/CI test runner. Runtime tests must not reach production endpoints by default.
