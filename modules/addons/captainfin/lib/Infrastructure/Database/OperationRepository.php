@@ -45,6 +45,54 @@ final class OperationRepository
         return $operation;
     }
 
+    public function findById(int $id): ?object
+    {
+        if ($id <= 0) {
+            return null;
+        }
+
+        return Capsule::table(self::TABLE)->where('id', $id)->first();
+    }
+
+    /**
+     * Return operations where automatic replay can materially advance state.
+     *
+     * planned/remote_applied entries are only considered after a grace period
+     * so a normal in-flight web request is not mistaken for abandoned work.
+     * failed entries are eligible only when the original failure explicitly
+     * supplied retry_after; non-retryable failures remain for admin review.
+     *
+     * @return object[]
+     */
+    public function dueForReconciliation(
+        int $limit = 20,
+        ?DateTimeImmutable $now = null,
+        int $staleSeconds = 60
+    ): array {
+        $limit = max(1, min(100, $limit));
+        $staleSeconds = max(30, min(3600, $staleSeconds));
+        $now ??= new DateTimeImmutable();
+        $nowSql = $now->format('Y-m-d H:i:s');
+        $staleBefore = $now->modify('-' . $staleSeconds . ' seconds')->format('Y-m-d H:i:s');
+
+        return Capsule::table(self::TABLE)
+            ->where(static function ($query) use ($staleBefore, $nowSql): void {
+                $query->where(static function ($stale) use ($staleBefore): void {
+                    $stale->whereIn('state', [OperationState::PLANNED, OperationState::REMOTE_APPLIED])
+                        ->where('updated_at', '<=', $staleBefore);
+                })->orWhere(static function ($failed) use ($nowSql): void {
+                    $failed->where('state', OperationState::FAILED)
+                        ->whereNotNull('retry_after')
+                        ->where('retry_after', '<=', $nowSql);
+                });
+            })
+            ->orderBy('updated_at')
+            ->orderBy('id')
+            ->limit($limit)
+            ->get()
+            ->all();
+    }
+
     public function latestKnownRemoteRefForService(int $serviceId): ?string
     {
         $row = Capsule::table(self::TABLE)
