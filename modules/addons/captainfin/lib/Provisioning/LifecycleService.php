@@ -6,11 +6,13 @@ namespace CaptainFin\Whmcs\Provisioning;
 
 use CaptainFin\Whmcs\Domain\OperationState;
 use CaptainFin\Whmcs\Infrastructure\Database\OperationRepository;
+use CaptainFin\Whmcs\Infrastructure\Database\ProductPolicyRepository;
 use DateTimeImmutable;
 
 final class LifecycleService
 {
     private OperationRepository $operations;
+    private ProductPolicyRepository $policies;
     private JellyfinLifecycle $jellyfin;
     private LifecycleLock $lock;
     private LifecycleFailureClassifier $failureClassifier;
@@ -19,9 +21,11 @@ final class LifecycleService
         ?OperationRepository $operations = null,
         ?JellyfinLifecycle $jellyfin = null,
         ?LifecycleLock $lock = null,
-        ?LifecycleFailureClassifier $failureClassifier = null
+        ?LifecycleFailureClassifier $failureClassifier = null,
+        ?ProductPolicyRepository $policies = null
     ) {
         $this->operations = $operations ?? new OperationRepository();
+        $this->policies = $policies ?? new ProductPolicyRepository();
         $this->jellyfin = $jellyfin ?? new JellyfinLifecycle($this->operations);
         $this->lock = $lock ?? new LifecycleLock();
         $this->failureClassifier = $failureClassifier ?? new LifecycleFailureClassifier();
@@ -71,6 +75,12 @@ final class LifecycleService
                     (string) ($operation->last_error ?? 'no detail recorded')
                 );
             }
+
+            // Persist the normalized policy before remote mutation so the CLI
+            // sampler/reconciler can operate from module-owned desired state.
+            // If this local write fails, the durable operation remains retryable
+            // and no external mutation is attempted under an unknown policy.
+            $this->policies->upsertFromWhmcsParams($params);
 
             // Even a previously converged operation is observed/applied again.
             // This keeps duplicate WHMCS callbacks idempotent while also letting
