@@ -1,0 +1,1 @@
+Source/contract tests are intentionally fast checks only. They must never be cited as proof that a mounted state-changing WHMCS lifecycle is operational.
