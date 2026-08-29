@@ -1,0 +1,1 @@
+The final licensed pass validates only WHMCS-owned behaviour and integration seams that cannot be faithfully reproduced here; it should not be where core Jellyfin/integration correctness is first discovered.
