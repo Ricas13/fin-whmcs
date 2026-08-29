@@ -1,0 +1,1 @@
+The runtime harness exists to validate a self-contained WHMCS module. No test or production path may depend on infrastructure operated by the module author.
