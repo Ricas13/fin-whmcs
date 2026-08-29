@@ -10,6 +10,7 @@
     "ext-mbstring": "*"
   },
   "require-dev": {
+    "illuminate/database": "^10.48",
     "phpunit/phpunit": "^10.5"
   },
   "autoload-dev": {
