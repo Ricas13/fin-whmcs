@@ -49,7 +49,6 @@ function captainfin_ConfigOptions(): array
         'User Selectable Libraries' => [
             'Type' => 'yesno',
             'Description' => 'Allow the client to choose from the libraries permitted by this product.',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Maximum Concurrent Streams' => [
@@ -86,12 +85,11 @@ function captainfin_ConfigOptions(): array
         ],
         'Jellyseerr Access' => [
             'Type' => 'yesno',
-            'Default' => 'on',
+            'Default' => 'yes',
             'SimpleMode' => true,
         ],
         'Stremio Access' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Discord Managed Role ID' => [
@@ -107,40 +105,33 @@ function captainfin_ConfigOptions(): array
         ],
         'Allow Downloads' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Allow Video Transcoding' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Allow Audio Transcoding' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Allow Remuxing' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Allow Live TV' => [
             'Type' => 'yesno',
-            'Default' => 'off',
         ],
         'Allow Live TV Management' => [
             'Type' => 'yesno',
-            'Default' => 'off',
         ],
         'Allow Remote Access' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Allow Subtitle Editing' => [
             'Type' => 'yesno',
-            'Default' => 'on',
+            'Default' => 'yes',
         ],
     ];
 }
