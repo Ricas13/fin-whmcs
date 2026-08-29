@@ -59,8 +59,13 @@ final class ProductPolicy
         $result = [];
         foreach ($parts as $item) {
             $item = trim((string) $item);
-            if ($item !== '') {
-                $result[mb_strtolower($item, 'UTF-8')] = $item;
+            if ($item === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($item, 'UTF-8');
+            if (!array_key_exists($key, $result)) {
+                $result[$key] = $item;
             }
         }
         return array_values($result);
