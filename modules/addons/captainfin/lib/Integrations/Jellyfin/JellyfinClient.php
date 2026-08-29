@@ -97,9 +97,17 @@ final class JellyfinClient
 
     public function setPassword(string $userId, string $password): void
     {
-        $this->http->request('/Users/' . rawurlencode($userId) . '/Password', 'POST', [
-            'Id' => $userId,
+        $userId = trim($userId);
+        if ($userId === '') {
+            throw new \InvalidArgumentException('Jellyfin user ID is required for password changes.');
+        }
+
+        // Jellyfin 10.11 and 12 both expose this route. The historical
+        // /Users/{userId}/Password form is retained only for backwards
+        // compatibility in v12, so use the canonical endpoint now.
+        $this->http->request('/Users/Password?userId=' . rawurlencode($userId), 'POST', [
             'NewPw' => $password,
+            'ResetPassword' => false,
         ]);
     }
 
