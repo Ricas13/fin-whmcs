@@ -48,6 +48,7 @@ final class JellyfinLifecycle
         $this->assertBindingServerMatches($binding, $params);
 
         $username = $this->desiredUsername($params, $binding);
+        $temporaryUsername = $this->temporaryUsername($serviceId, $operation);
         $password = $this->servicePassword($params);
         $policy = $this->activePolicy($client, $params);
         $user = null;
@@ -60,9 +61,12 @@ final class JellyfinLifecycle
             $candidate = $client->getUser((string) $operation->remote_ref);
             if ($candidate !== null) {
                 $remoteName = trim((string) ($candidate['Name'] ?? ''));
-                if ($this->nameKey($remoteName) !== $this->nameKey($username)) {
+                if (!in_array($this->nameKey($remoteName), [
+                    $this->nameKey($username),
+                    $this->nameKey($temporaryUsername),
+                ], true)) {
                     throw new ManualAttentionException(
-                        'Previously recorded Jellyfin remote identity no longer matches the expected username.'
+                        'Previously recorded Jellyfin remote identity no longer matches this provisioning operation.'
                     );
                 }
                 $user = $candidate;
@@ -70,33 +74,37 @@ final class JellyfinLifecycle
         }
 
         if ($user === null) {
-            $existing = $client->findUserByName($username);
-            if ($existing !== null) {
+            $existingDesired = $client->findUserByName($username);
+            if ($existingDesired !== null) {
                 throw new ManualAttentionException(
                     sprintf('Jellyfin username "%s" already exists but is not safely bound to this WHMCS service.', $username)
                 );
             }
 
-            $bootstrapPassword = $this->bootstrapPassword();
-            try {
-                $user = $client->createUser($username, $bootstrapPassword);
-            } catch (JellyfinException $error) {
-                if (!$error->isAmbiguous()) {
-                    throw $error;
-                }
-
-                // We proved the username did not exist immediately before the
-                // ambiguous create. If it exists now, this operation created it.
+            // Creation uses an operation-scoped temporary username. That gives
+            // us a unique observation key if POST /Users/New times out after the
+            // server committed the user but before WHMCS received the response.
+            $user = $client->findUserByName($temporaryUsername);
+            if ($user === null) {
+                $bootstrapPassword = $this->bootstrapPassword();
                 try {
-                    $observed = $client->findUserByName($username);
-                } catch (\Throwable) {
-                    throw $error;
-                }
+                    $user = $client->createUser($temporaryUsername, $bootstrapPassword);
+                } catch (JellyfinException $error) {
+                    if (!$error->isAmbiguous()) {
+                        throw $error;
+                    }
 
-                if ($observed === null) {
-                    throw $error;
+                    try {
+                        $observed = $client->findUserByName($temporaryUsername);
+                    } catch (\Throwable) {
+                        throw $error;
+                    }
+
+                    if ($observed === null) {
+                        throw $error;
+                    }
+                    $user = $observed;
                 }
-                $user = $observed;
             }
         }
 
@@ -108,12 +116,14 @@ final class JellyfinLifecycle
         $this->operations->markRemoteApplied((int) $operation->id, $userId, [
             'stage' => 'user_exists',
             'jellyfin_user_id' => $userId,
-            'username' => $username,
+            'observed_username' => (string) ($user['Name'] ?? ''),
+            'desired_username' => $username,
         ]);
 
         // Keep the customer credential unknown to the new remote account until
-        // the restrictive plan/library policy is successfully applied.
+        // the restrictive product/library policy is successfully applied.
         $client->setPolicy($userId, $policy);
+        $this->ensureUsername($client, $userId, $username);
         $client->setPassword($userId, $password);
 
         $this->operations->markRemoteApplied((int) $operation->id, $userId, [
@@ -254,6 +264,43 @@ final class JellyfinLifecycle
         $this->operations->markLocalApplied((int) $operation->id);
     }
 
+    private function ensureUsername(JellyfinClient $client, string $userId, string $username): void
+    {
+        $current = $client->getUser($userId);
+        if ($current === null) {
+            throw new JellyfinException('Jellyfin user disappeared before username convergence.');
+        }
+
+        if ($this->nameKey((string) ($current['Name'] ?? '')) === $this->nameKey($username)) {
+            return;
+        }
+
+        $conflict = $client->findUserByName($username);
+        if ($conflict !== null && (string) ($conflict['Id'] ?? '') !== $userId) {
+            throw new ManualAttentionException(
+                sprintf('Jellyfin username "%s" became occupied before provisioning completed.', $username)
+            );
+        }
+
+        try {
+            $client->renameUser($userId, $username);
+        } catch (JellyfinException $error) {
+            if (!$error->isAmbiguous()) {
+                throw $error;
+            }
+
+            try {
+                $observed = $client->getUser($userId);
+            } catch (\Throwable) {
+                throw $error;
+            }
+
+            if ($observed === null || $this->nameKey((string) ($observed['Name'] ?? '')) !== $this->nameKey($username)) {
+                throw $error;
+            }
+        }
+    }
+
     private function activePolicy(JellyfinClient $client, array $params): array
     {
         $requested = $this->configuredLibraries($params);
@@ -344,6 +391,16 @@ final class JellyfinLifecycle
         }
 
         return $candidate;
+    }
+
+    private function temporaryUsername(int $serviceId, object $operation): string
+    {
+        $operationKey = trim((string) ($operation->operation_key ?? ''));
+        if ($operationKey === '') {
+            throw new \RuntimeException('Durable operation key is required for Jellyfin provisioning.');
+        }
+
+        return sprintf('cf_%d_%s', $serviceId, substr(hash('sha256', $operationKey), 0, 16));
     }
 
     private function servicePassword(array $params): string
