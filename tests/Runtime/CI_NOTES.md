@@ -1,0 +1,1 @@
+CI should eventually run deterministic real-service integration tests in addition to the fast PHP 8.1/8.2/8.3 unit/contract matrix.
