@@ -111,6 +111,10 @@ if (!$wizardComplete) {
         'ServerName' => 'CAPTAiNFiN Runtime Test',
     ], $clientAuth);
 
+    // In both 10.11 and 12, GET /Startup/User initializes the first user when
+    // needed. POST /Startup/User only updates that existing user and can return
+    // 404 on a pristine v12 database if this initialization read is skipped.
+    request($baseUrl, '/Startup/User', 'GET', null, $clientAuth);
     request($baseUrl, '/Startup/User', 'POST', [
         'Name' => $adminUser,
         'Password' => $adminPassword,
