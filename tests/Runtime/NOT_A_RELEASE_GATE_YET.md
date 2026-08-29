@@ -1,0 +1,1 @@
+The local runtime gate becomes release-blocking only after deterministic service bootstrap is complete. Until then, CI must not market skipped tests as real-service success.
