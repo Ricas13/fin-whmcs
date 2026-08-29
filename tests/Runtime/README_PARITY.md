@@ -1,0 +1,1 @@
+Runtime tests should be added as each feature-matrix row moves from planned to implemented. The matrix remains the product parity contract; runtime evidence determines whether a state-changing row is actually proven.
