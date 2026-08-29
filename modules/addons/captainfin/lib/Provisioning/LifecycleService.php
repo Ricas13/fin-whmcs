@@ -45,10 +45,6 @@ final class LifecycleService
                 $target
             );
 
-            if ($operation->state === OperationState::LOCAL_APPLIED) {
-                return 'success';
-            }
-
             if ($operation->state === OperationState::MANUAL_ATTENTION) {
                 return sprintf(
                     'CAPTAiNFiN operation requires manual attention (operation #%d): %s',
@@ -57,6 +53,9 @@ final class LifecycleService
                 );
             }
 
+            // Even a previously converged operation is observed/applied again.
+            // This keeps duplicate WHMCS callbacks idempotent while also letting
+            // them repair remote drift instead of trusting stale local success.
             $this->jellyfin->execute($operationType, $params, $operation);
 
             return 'success';
