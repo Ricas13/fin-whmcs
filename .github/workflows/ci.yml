@@ -46,3 +46,24 @@ jobs:
 
       - name: Run contract tests
         run: vendor/bin/phpunit
+
+  jellyfin-runtime:
+    name: Jellyfin 10.11 runtime smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: curl,json,mbstring
+          tools: composer:v2
+
+      - name: Install development dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run disposable Jellyfin runtime smoke
+        run: bash scripts/test-runtime.sh
