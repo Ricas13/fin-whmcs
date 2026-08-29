@@ -1,0 +1,1 @@
+Concrete Stremio mutation code remains gated on auditing the actual fin-fusion Stremio owner. The interface and lifecycle entitlement boundary are present; do not invent an unrelated public-Stremio integration.
