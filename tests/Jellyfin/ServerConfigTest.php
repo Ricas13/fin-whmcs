@@ -35,6 +35,17 @@ final class ServerConfigTest extends TestCase
         self::assertSame('https://media.example.com/jellyfin', $config->baseUrl());
     }
 
+    public function testPreservesBracketedIpv6Url(): void
+    {
+        $config = ServerConfig::fromWhmcs([
+            'serverid' => 3,
+            'serverhostname' => 'http://[2001:db8::10]:8096/jellyfin/',
+            'serverpassword' => 'api-key',
+        ]);
+
+        self::assertSame('http://[2001:db8::10]:8096/jellyfin', $config->baseUrl());
+    }
+
     /** @dataProvider invalidUrlProvider */
     public function testRejectsUnsafeOrInvalidUrls(string $url): void
     {
