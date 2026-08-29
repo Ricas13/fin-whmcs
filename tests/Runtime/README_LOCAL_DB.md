@@ -1,0 +1,1 @@
+Runtime lifecycle tests must use a disposable MySQL/MariaDB-compatible database and the actual module schema. An in-memory repository substitute is insufficient evidence for binding/operation persistence and advisory-lock behaviour.
