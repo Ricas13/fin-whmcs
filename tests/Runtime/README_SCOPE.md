@@ -1,0 +1,1 @@
+Pre-license work focuses on module-owned domains and external media integrations. WHMCS-owned billing, authentication, admin role semantics, and rendering are intentionally not reimplemented.
