@@ -70,8 +70,9 @@ final class ModuleContractTest extends TestCase
         self::assertArrayHasKey('Allow Remote Access', $options);
         self::assertArrayHasKey('Allow Subtitle Editing', $options);
 
-        self::assertSame('off', $options['Allow Video Transcoding']['Default']);
-        self::assertSame('off', $options['Allow Remote Access']['Default']);
-        self::assertSame('on', $options['Allow Subtitle Editing']['Default']);
+        self::assertArrayNotHasKey('Default', $options['Allow Video Transcoding']);
+        self::assertArrayNotHasKey('Default', $options['Allow Remote Access']);
+        self::assertSame('yes', $options['Allow Subtitle Editing']['Default']);
+        self::assertSame('yes', $options['Jellyseerr Access']['Default']);
     }
 }
