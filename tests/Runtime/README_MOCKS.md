@@ -1,0 +1,1 @@
+HTTP mocks are for deterministic error/ambiguity injection. They do not replace the real Jellyfin acceptance path.
