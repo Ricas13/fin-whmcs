@@ -1,0 +1,1 @@
+Fault-injection runtime coverage must include provider timeout after commit, retryable provider failure before commit, and local persistence failure after remote success. Tests must assert durable journal state and eventual convergence, not only returned error strings.
