@@ -64,7 +64,7 @@ final class LifecycleService
 
             if ($operation->state === OperationState::MANUAL_ATTENTION) {
                 return sprintf(
-                    'CAPTAI... operation requires manual attention (operation #%d): %s',
+                    'CAPTAiNFiN operation requires manual attention (operation #%d): %s',
                     (int) $operation->id,
                     (string) ($operation->last_error ?? 'no detail recorded')
                 );
