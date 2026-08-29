@@ -115,6 +115,25 @@ final class JellyfinClient
         }
     }
 
+    /** @return array<int,array<string,mixed>> */
+    public function listSessions(): array
+    {
+        $result = $this->http->request('/Sessions', 'GET', null, 7);
+        if (!is_array($result)) {
+            throw new JellyfinException('Jellyfin returned an invalid session list.');
+        }
+        return array_values(array_filter($result, 'is_array'));
+    }
+
+    public function stopSession(string $sessionId): void
+    {
+        $sessionId = trim($sessionId);
+        if ($sessionId === '' || !preg_match('/^[A-Za-z0-9._:-]{1,191}$/', $sessionId)) {
+            throw new \InvalidArgumentException('Invalid Jellyfin session ID.');
+        }
+        $this->http->request('/Sessions/' . rawurlencode($sessionId) . '/Playing/Stop', 'POST');
+    }
+
     public function listLibraries(): array
     {
         $result = $this->http->request('/Library/VirtualFolders', 'GET', null, 7);
