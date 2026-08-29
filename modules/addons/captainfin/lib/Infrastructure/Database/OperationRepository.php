@@ -29,6 +29,7 @@ final class OperationRepository
             'state' => OperationState::PLANNED,
             'attempts' => 0,
             'expected_remote_json' => $expectedRemote === [] ? null : $this->encode($expectedRemote),
+            'started_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -48,9 +49,8 @@ final class OperationRepository
     {
         Capsule::table(self::TABLE)
             ->where('id', $id)
-            ->update([
+            ->increment('attempts', 1, [
                 'state' => OperationState::FAILED,
-                'attempts' => Capsule::raw('attempts + 1'),
                 'last_error' => $this->truncate($error),
                 'retry_after' => $retryAfter?->format('Y-m-d H:i:s'),
                 'updated_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
@@ -61,9 +61,8 @@ final class OperationRepository
     {
         Capsule::table(self::TABLE)
             ->where('id', $id)
-            ->update([
+            ->increment('attempts', 1, [
                 'state' => OperationState::REMOTE_APPLIED,
-                'attempts' => Capsule::raw('attempts + 1'),
                 'remote_ref' => $remoteRef,
                 'observed_remote_json' => $observedRemote === [] ? null : $this->encode($observedRemote),
                 'last_error' => null,
