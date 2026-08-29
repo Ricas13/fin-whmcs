@@ -17,6 +17,7 @@ final class Schema
     private const TABLE_SERVERS = 'mod_captainfin_servers';
     private const TABLE_INTEGRATION_BINDINGS = 'mod_captainfin_integration_bindings';
     private const TABLE_ACTIVITY = 'mod_captainfin_activity_observations';
+    private const TABLE_ACTIVE_SESSIONS = 'mod_captainfin_active_sessions';
     private const TABLE_TELEMETRY = 'mod_captainfin_server_telemetry';
     private const TABLE_POLICY_EVENTS = 'mod_captainfin_policy_events';
     private const TABLE_HEALTH = 'mod_captainfin_health_checks';
@@ -130,6 +131,24 @@ final class Schema
             });
         }
 
+        if (!$schema->hasTable(self::TABLE_ACTIVE_SESSIONS)) {
+            $schema->create(self::TABLE_ACTIVE_SESSIONS, static function (Blueprint $table): void {
+                $table->bigIncrements('id');
+                $table->unsignedInteger('server_id')->index();
+                $table->unsignedInteger('service_id')->nullable()->index();
+                $table->string('session_id', 191);
+                $table->string('jellyfin_user_id', 191)->index();
+                $table->string('network_key', 191)->nullable();
+                $table->boolean('is_transcoding')->default(false)->index();
+                $table->unsignedInteger('source_height')->default(0);
+                $table->dateTime('first_seen_at')->index();
+                $table->dateTime('last_seen_at')->index();
+                $table->text('observation_json')->nullable();
+                $table->timestamps();
+                $table->unique(['server_id', 'session_id'], 'captainfin_active_server_session');
+            });
+        }
+
         if (!$schema->hasTable(self::TABLE_TELEMETRY)) {
             $schema->create(self::TABLE_TELEMETRY, static function (Blueprint $table): void {
                 $table->increments('id');
@@ -183,9 +202,6 @@ final class Schema
         }
     }
 
-    /**
-     * Deactivation deliberately preserves operational state.
-     */
     public static function deactivate(): void
     {
     }
@@ -201,6 +217,7 @@ final class Schema
             self::TABLE_SERVERS => $schema->hasTable(self::TABLE_SERVERS),
             self::TABLE_INTEGRATION_BINDINGS => $schema->hasTable(self::TABLE_INTEGRATION_BINDINGS),
             self::TABLE_ACTIVITY => $schema->hasTable(self::TABLE_ACTIVITY),
+            self::TABLE_ACTIVE_SESSIONS => $schema->hasTable(self::TABLE_ACTIVE_SESSIONS),
             self::TABLE_TELEMETRY => $schema->hasTable(self::TABLE_TELEMETRY),
             self::TABLE_POLICY_EVENTS => $schema->hasTable(self::TABLE_POLICY_EVENTS),
             self::TABLE_HEALTH => $schema->hasTable(self::TABLE_HEALTH),
