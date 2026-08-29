@@ -6,6 +6,9 @@ if (!defined('WHMCS')) {
     die('This file cannot be accessed directly.');
 }
 
+use CaptainFin\Whmcs\Integrations\Jellyfin\HttpClient;
+use CaptainFin\Whmcs\Integrations\Jellyfin\JellyfinClient;
+use CaptainFin\Whmcs\Integrations\Jellyfin\ServerConfig;
 use CaptainFin\Whmcs\Provisioning\LifecycleService;
 
 $captainfinAutoloader = dirname(__DIR__, 2) . '/addons/captainfin/lib/autoload.php';
@@ -40,13 +43,12 @@ function captainfin_ConfigOptions(): array
         'Libraries' => [
             'Type' => 'text',
             'Size' => '50',
-            'Description' => 'Comma-separated allowed Jellyfin libraries. Empty means policy default.',
+            'Description' => 'Comma-separated allowed Jellyfin libraries. Empty grants all libraries.',
             'SimpleMode' => true,
         ],
         'User Selectable Libraries' => [
             'Type' => 'yesno',
             'Description' => 'Allow the client to choose from the libraries permitted by this product.',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Maximum Concurrent Streams' => [
@@ -83,12 +85,11 @@ function captainfin_ConfigOptions(): array
         ],
         'Jellyseerr Access' => [
             'Type' => 'yesno',
-            'Default' => 'on',
+            'Default' => 'yes',
             'SimpleMode' => true,
         ],
         'Stremio Access' => [
             'Type' => 'yesno',
-            'Default' => 'off',
             'SimpleMode' => true,
         ],
         'Discord Managed Role ID' => [
@@ -102,7 +103,59 @@ function captainfin_ConfigOptions(): array
             'Default' => '0',
             'Description' => '0 disables inactivity enforcement for this product.',
         ],
+        'Allow Downloads' => [
+            'Type' => 'yesno',
+            'SimpleMode' => true,
+        ],
+        'Allow Video Transcoding' => [
+            'Type' => 'yesno',
+            'SimpleMode' => true,
+        ],
+        'Allow Audio Transcoding' => [
+            'Type' => 'yesno',
+            'SimpleMode' => true,
+        ],
+        'Allow Remuxing' => [
+            'Type' => 'yesno',
+            'SimpleMode' => true,
+        ],
+        'Allow Live TV' => [
+            'Type' => 'yesno',
+        ],
+        'Allow Live TV Management' => [
+            'Type' => 'yesno',
+        ],
+        'Allow Remote Access' => [
+            'Type' => 'yesno',
+            'SimpleMode' => true,
+        ],
+        'Allow Subtitle Editing' => [
+            'Type' => 'yesno',
+            'Default' => 'yes',
+        ],
     ];
+}
+
+function captainfin_TestConnection(array $params): array
+{
+    try {
+        $config = ServerConfig::fromWhmcs($params);
+        $info = (new JellyfinClient(new HttpClient($config)))->systemInfo();
+        $version = trim((string) ($info['Version'] ?? ''));
+        $serverName = trim((string) ($info['ServerName'] ?? ''));
+        $details = array_values(array_filter([$serverName, $version !== '' ? 'Jellyfin ' . $version : null]));
+
+        return [
+            'success' => true,
+            'error' => '',
+            'message' => $details !== [] ? implode(' · ', $details) : 'Connected to Jellyfin successfully.',
+        ];
+    } catch (Throwable $error) {
+        return [
+            'success' => false,
+            'error' => $error->getMessage(),
+        ];
+    }
 }
 
 function captainfin_CreateAccount(array $params): string

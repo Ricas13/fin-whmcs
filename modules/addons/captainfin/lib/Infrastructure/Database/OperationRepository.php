@@ -45,6 +45,23 @@ final class OperationRepository
         return $operation;
     }
 
+    public function latestKnownRemoteRefForService(int $serviceId): ?string
+    {
+        $row = Capsule::table(self::TABLE)
+            ->where('service_id', $serviceId)
+            ->whereNotNull('remote_ref')
+            ->where('remote_ref', '<>', '')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        $remoteRef = trim((string) $row->remote_ref);
+        return $remoteRef !== '' ? $remoteRef : null;
+    }
+
     public function markFailed(int $id, string $error, ?DateTimeImmutable $retryAfter = null): void
     {
         Capsule::table(self::TABLE)
