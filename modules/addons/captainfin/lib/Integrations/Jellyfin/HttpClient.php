@@ -34,7 +34,7 @@ final class HttpClient
         $timeoutSeconds = max(1, min(60, $timeoutSeconds));
         $url = rtrim($this->config->baseUrl(), '/') . $endpoint;
         $headers = [
-            'Authorization: MediaBrowser Token="' . $this->config->apiKey() . '"',
+            'Authorization: ' . AuthorizationHeader::build($this->config->apiKey()),
             'Accept: application/json',
         ];
 
@@ -63,7 +63,7 @@ final class HttpClient
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_NOSIGNAL => true,
-            CURLOPT_USERAGENT => 'CAPTAiNFiN-WHMCS/0.1',
+            CURLOPT_USERAGENT => 'CAPTAiNFiN-WHMCS/' . AuthorizationHeader::CLIENT_VERSION,
         ];
 
         if (defined('CURLOPT_PROTOCOLS')) {
