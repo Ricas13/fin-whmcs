@@ -32,6 +32,7 @@ final class ModuleContractTest extends TestCase
     {
         require_once dirname(__DIR__) . '/modules/servers/captainfin/captainfin.php';
 
+        self::assertTrue(function_exists('captainfin_TestConnection'));
         self::assertTrue(function_exists('captainfin_CreateAccount'));
         self::assertTrue(function_exists('captainfin_SuspendAccount'));
         self::assertTrue(function_exists('captainfin_UnsuspendAccount'));
@@ -60,5 +61,17 @@ final class ModuleContractTest extends TestCase
         self::assertArrayHasKey('Stremio Access', $options);
         self::assertArrayHasKey('Discord Managed Role ID', $options);
         self::assertArrayHasKey('Inactivity Days', $options);
+        self::assertArrayHasKey('Allow Downloads', $options);
+        self::assertArrayHasKey('Allow Video Transcoding', $options);
+        self::assertArrayHasKey('Allow Audio Transcoding', $options);
+        self::assertArrayHasKey('Allow Remuxing', $options);
+        self::assertArrayHasKey('Allow Live TV', $options);
+        self::assertArrayHasKey('Allow Live TV Management', $options);
+        self::assertArrayHasKey('Allow Remote Access', $options);
+        self::assertArrayHasKey('Allow Subtitle Editing', $options);
+
+        self::assertSame('off', $options['Allow Video Transcoding']['Default']);
+        self::assertSame('off', $options['Allow Remote Access']['Default']);
+        self::assertSame('on', $options['Allow Subtitle Editing']['Default']);
     }
 }
