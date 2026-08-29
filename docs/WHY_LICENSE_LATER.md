@@ -1,0 +1,1 @@
+The WHMCS license should be used for compatibility validation, UI/mounted integration and final Marketplace installation—not as a prerequisite for core external-service correctness. This keeps the expensive test window focused and makes failures easier to attribute.
