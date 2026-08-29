@@ -78,7 +78,12 @@ final class ServerConfig
             throw new \InvalidArgumentException('Jellyfin URL hostname is required.');
         }
 
-        return sprintf('%s://%s%s%s', $scheme, $host, $port, $path);
+        $formattedHost = $host;
+        if (str_contains($host, ':') && !str_starts_with($host, '[')) {
+            $formattedHost = '[' . $host . ']';
+        }
+
+        return sprintf('%s://%s%s%s', $scheme, $formattedHost, $port, $path);
     }
 
     public function serverId(): int
