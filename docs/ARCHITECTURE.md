@@ -52,14 +52,19 @@ Canonical operation states:
 - `local_applied` - remote and local expected state are both proven
 - `failed` - transient/retryable failure with error context
 - `manual_attention` - automatic convergence is unsafe or impossible
+- `superseded` - newer durable intent for the same WHMCS service made the older operation obsolete
 
 A provider/API timeout after an ambiguous remote call must not cause blind duplicate account creation or destructive retries. Reconciliation observes remote state first and only repeats a mutation when the operation type declares that repeat to be safe.
 
-## Idempotency
+## Idempotency and ordering
 
-Every lifecycle mutation gets an idempotency key derived from the WHMCS service, operation type and relevant target version/state. Duplicate WHMCS callbacks must converge on the same operation rather than creating parallel remote mutations.
+Every lifecycle mutation gets an idempotency key derived from the WHMCS service, operation type and relevant target version/state. Duplicate WHMCS callbacks converge on the same operation rather than creating parallel remote mutations.
 
 Remote resource identifiers are retained independently of the transient request so failed local application can be recovered.
+
+Lifecycle execution is serialized per WHMCS service with a database advisory lock. The retry/reconciliation owner has a separate global advisory lock so overlapping WHMCS cron processes cannot run the same recovery batch concurrently.
+
+For different intents on one service, newer durable intent wins. A stale failed `suspend` must therefore never replay after a newer `unsuspend`, package change or termination. Older unresolved operations are marked `superseded` rather than silently discarded.
 
 ## Deletion invariant
 
@@ -70,6 +75,8 @@ Termination is complete only when every enabled external entitlement is either:
 
 A local row must never be the only copy of a remote identity required for cleanup.
 
+If WHMCS already marks a service Cancelled/Terminated while an older non-termination operation is unresolved, automatic recovery converts that stale intent into the WHMCS `ModuleTerminate` path rather than recreating access.
+
 ## Runtime model
 
 ### Synchronous path
@@ -78,9 +85,23 @@ WHMCS lifecycle calls perform the smallest safe synchronous reconciliation neede
 
 ### Standard WHMCS cron
 
-The addon uses WHMCS cron hooks for:
+`modules/addons/captainfin/hooks.php` attaches the canonical reconciler to `AfterCronJob`.
 
-- retrying failed durable operations
+Automatic recovery:
+
+- only considers stale `planned`/`remote_applied` operations and explicitly retryable `failed` operations
+- rechecks the operation immediately before replay
+- refuses to invoke a service that no longer belongs to the CAPTAiNFiN provisioning module
+- converts ended-service stale intent to cleanup
+- does not replay unresolved `create` against a manually Suspended service
+- does not automatically replay password changes because the intended secret is deliberately not stored in the durable journal
+- stops after a bounded attempt budget and moves unsafe/unrecoverable cases to `manual_attention`
+- re-enters lifecycle through WHMCS module commands, preserving WHMCS as the owner of service context
+
+Routine cron passes are silent. WHMCS activity logging is reserved for meaningful recovery/supersession/manual-attention summaries and top-level reconciliation failures.
+
+The same cron surface will also own:
+
 - remote/local drift reconciliation
 - health refresh
 - cleanup retries
@@ -131,6 +152,7 @@ Deactivation does not drop operational tables. Uninstall/removal of data must be
 - Client-area actions require WHMCS authentication and service ownership checks.
 - Remote TLS verification is on by default; insecure TLS must never silently become the fallback.
 - State-changing operations record actor/source and correlation information.
+- Recovery never invokes another provisioning module after a WHMCS product/module reassignment.
 
 ## Release principle
 
