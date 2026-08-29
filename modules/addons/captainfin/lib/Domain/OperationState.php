@@ -11,6 +11,7 @@ final class OperationState
     public const LOCAL_APPLIED = 'local_applied';
     public const FAILED = 'failed';
     public const MANUAL_ATTENTION = 'manual_attention';
+    public const SUPERSEDED = 'superseded';
 
     private const ALL = [
         self::PLANNED,
@@ -18,6 +19,7 @@ final class OperationState
         self::LOCAL_APPLIED,
         self::FAILED,
         self::MANUAL_ATTENTION,
+        self::SUPERSEDED,
     ];
 
     private function __construct()
@@ -31,6 +33,10 @@ final class OperationState
 
     public static function isTerminal(string $state): bool
     {
-        return in_array($state, [self::LOCAL_APPLIED, self::MANUAL_ATTENTION], true);
+        return in_array($state, [
+            self::LOCAL_APPLIED,
+            self::MANUAL_ATTENTION,
+            self::SUPERSEDED,
+        ], true);
     }
 }
