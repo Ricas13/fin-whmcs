@@ -16,13 +16,15 @@ final class ModuleContractTest extends TestCase
         self::assertTrue(OperationState::isValid(OperationState::LOCAL_APPLIED));
         self::assertTrue(OperationState::isValid(OperationState::FAILED));
         self::assertTrue(OperationState::isValid(OperationState::MANUAL_ATTENTION));
+        self::assertTrue(OperationState::isValid(OperationState::SUPERSEDED));
         self::assertFalse(OperationState::isValid('success-ish'));
     }
 
-    public function testOnlyConvergedAndManualAttentionStatesAreTerminal(): void
+    public function testTerminalOperationStatesAreExplicit(): void
     {
         self::assertTrue(OperationState::isTerminal(OperationState::LOCAL_APPLIED));
         self::assertTrue(OperationState::isTerminal(OperationState::MANUAL_ATTENTION));
+        self::assertTrue(OperationState::isTerminal(OperationState::SUPERSEDED));
         self::assertFalse(OperationState::isTerminal(OperationState::PLANNED));
         self::assertFalse(OperationState::isTerminal(OperationState::REMOTE_APPLIED));
         self::assertFalse(OperationState::isTerminal(OperationState::FAILED));
@@ -74,5 +76,16 @@ final class ModuleContractTest extends TestCase
         self::assertArrayNotHasKey('Default', $options['Allow Remote Access']);
         self::assertSame('yes', $options['Allow Subtitle Editing']['Default']);
         self::assertSame('yes', $options['Jellyseerr Access']['Default']);
+    }
+
+    public function testAddonShipsAutomaticReconciliationHook(): void
+    {
+        $hooks = dirname(__DIR__) . '/modules/addons/captainfin/hooks.php';
+        self::assertFileExists($hooks);
+
+        $contents = file_get_contents($hooks);
+        self::assertIsString($contents);
+        self::assertStringContainsString("add_hook('AfterCronJob'", $contents);
+        self::assertStringContainsString('new Reconciler()', $contents);
     }
 }

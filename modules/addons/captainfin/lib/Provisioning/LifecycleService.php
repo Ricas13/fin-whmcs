@@ -6,7 +6,6 @@ namespace CaptainFin\Whmcs\Provisioning;
 
 use CaptainFin\Whmcs\Domain\OperationState;
 use CaptainFin\Whmcs\Infrastructure\Database\OperationRepository;
-use CaptainFin\Whmcs\Integrations\Jellyfin\JellyfinException;
 use DateTimeImmutable;
 
 final class LifecycleService
@@ -14,15 +13,18 @@ final class LifecycleService
     private OperationRepository $operations;
     private JellyfinLifecycle $jellyfin;
     private LifecycleLock $lock;
+    private LifecycleFailureClassifier $failureClassifier;
 
     public function __construct(
         ?OperationRepository $operations = null,
         ?JellyfinLifecycle $jellyfin = null,
-        ?LifecycleLock $lock = null
+        ?LifecycleLock $lock = null,
+        ?LifecycleFailureClassifier $failureClassifier = null
     ) {
         $this->operations = $operations ?? new OperationRepository();
         $this->jellyfin = $jellyfin ?? new JellyfinLifecycle($this->operations);
         $this->lock = $lock ?? new LifecycleLock();
+        $this->failureClassifier = $failureClassifier ?? new LifecycleFailureClassifier();
     }
 
     public function execute(string $operationType, array $params): string
@@ -76,9 +78,17 @@ final class LifecycleService
             $this->jellyfin->execute($operationType, $params, $operation);
 
             return 'success';
-        } catch (ManualAttentionException $error) {
-            if ($operation !== null) {
+        } catch (\Throwable $error) {
+            if ($operation === null) {
+                return $error instanceof ManualAttentionException || $error instanceof \InvalidArgumentException
+                    ? 'CAPTAiNFiN requires manual attention: ' . $error->getMessage()
+                    : 'CAPTAiNFiN lifecycle error: ' . $error->getMessage();
+            }
+
+            $disposition = $this->failureClassifier->classify($error);
+            if ($disposition['action'] === LifecycleFailureClassifier::MANUAL_ATTENTION) {
                 $this->operations->markManualAttention((int) $operation->id, $error->getMessage());
+
                 return sprintf(
                     'CAPTAiNFiN operation requires manual attention (operation #%d): %s',
                     (int) $operation->id,
@@ -86,22 +96,18 @@ final class LifecycleService
                 );
             }
 
-            return 'CAPTAiNFiN requires manual attention: ' . $error->getMessage();
-        } catch (\Throwable $error) {
-            if ($operation !== null) {
-                $retryAfter = $error instanceof JellyfinException && $error->isRetryable()
-                    ? (new DateTimeImmutable())->modify('+1 minute')
-                    : null;
-                $this->operations->markFailed((int) $operation->id, $error->getMessage(), $retryAfter);
+            $delaySeconds = max(1, (int) ($disposition['delay_seconds'] ?? 300));
+            $this->operations->markFailed(
+                (int) $operation->id,
+                $error->getMessage(),
+                (new DateTimeImmutable())->modify('+' . $delaySeconds . ' seconds')
+            );
 
-                return sprintf(
-                    'CAPTAiNFiN operation #%d failed: %s',
-                    (int) $operation->id,
-                    $error->getMessage()
-                );
-            }
-
-            return 'CAPTAiNFiN lifecycle error: ' . $error->getMessage();
+            return sprintf(
+                'CAPTAiNFiN operation #%d failed and is scheduled for reconciliation: %s',
+                (int) $operation->id,
+                $error->getMessage()
+            );
         }
     }
 
