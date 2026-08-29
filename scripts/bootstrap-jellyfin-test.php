@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use CaptainFin\Whmcs\Integrations\Jellyfin\AuthorizationHeader;
+
+require_once dirname(__DIR__) . '/modules/addons/captainfin/lib/autoload.php';
+
 $baseUrl = rtrim((string) (getenv('CAPTAINFIN_TEST_JELLYFIN_URL') ?: 'http://127.0.0.1:18096'), '/');
 $adminUser = (string) (getenv('CAPTAINFIN_TEST_JELLYFIN_ADMIN_USER') ?: 'captainfin-admin');
 $adminPassword = (string) (getenv('CAPTAINFIN_TEST_JELLYFIN_ADMIN_PASSWORD') ?: 'CaptainFin-Test-Admin-Only!');
 $tokenFile = (string) (getenv('CAPTAINFIN_TEST_JELLYFIN_TOKEN_FILE') ?: dirname(__DIR__) . '/.runtime/jellyfin-token');
-$clientAuth = 'MediaBrowser Client="CAPTAiNFiN Tests", Device="CI", DeviceId="captainfin-test-bootstrap", Version="0.2.0"';
+$clientAuth = AuthorizationHeader::build('', 'CAPTAiNFiN Tests', 'CI', 'captainfin-test-bootstrap', AuthorizationHeader::CLIENT_VERSION);
 
 if (!extension_loaded('curl')) {
     fwrite(STDERR, "PHP cURL extension is required.\n");
@@ -64,7 +68,7 @@ function request(string $baseUrl, string $path, string $method = 'GET', ?array $
     return $decoded;
 }
 
-$deadline = microtime(true) + 90;
+$deadline = microtime(true) + 120;
 $publicInfo = null;
 while (microtime(true) < $deadline) {
     try {
@@ -111,6 +115,17 @@ if ($token === '') {
     exit(1);
 }
 
+// Prove the post-authentication header itself works before handing the token to
+// the WHMCS lifecycle tests. This catches the v12 legacy-auth failure mode at
+// bootstrap time rather than allowing a misleading later lifecycle failure.
+request(
+    $baseUrl,
+    '/System/Info',
+    'GET',
+    null,
+    AuthorizationHeader::build($token, 'CAPTAiNFiN Tests', 'CI', 'captainfin-test-bootstrap', AuthorizationHeader::CLIENT_VERSION)
+);
+
 $directory = dirname($tokenFile);
 if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
     throw new RuntimeException('Unable to create runtime token directory.');
@@ -120,5 +135,6 @@ if (file_put_contents($tokenFile, $token . PHP_EOL, LOCK_EX) === false) {
 }
 @chmod($tokenFile, 0600);
 
-echo "Jellyfin runtime test server bootstrapped successfully.\n";
+$version = trim((string) ($publicInfo['Version'] ?? 'unknown'));
+echo "Jellyfin {$version} runtime test server bootstrapped successfully.\n";
 echo "Token written to {$tokenFile}.\n";
