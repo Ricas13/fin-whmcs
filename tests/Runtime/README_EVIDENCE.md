@@ -1,0 +1,1 @@
+Runtime acceptance items are intentionally tracked separately from PHPUnit pass/fail so skipped real-service tests cannot make CI look more complete than it is.
