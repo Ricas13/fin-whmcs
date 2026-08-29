@@ -84,10 +84,27 @@ final class JellyfinClient
 
     public function renameUser(string $userId, string $username): void
     {
-        $this->http->request('/Users/' . rawurlencode($userId), 'POST', [
-            'Id' => $userId,
-            'Name' => $username,
-        ]);
+        $userId = trim($userId);
+        $username = trim($username);
+        if ($userId === '' || $username === '') {
+            throw new \InvalidArgumentException('Jellyfin user ID and username are required for rename.');
+        }
+
+        $current = $this->getUser($userId);
+        if ($current === null) {
+            throw new JellyfinException('Jellyfin user disappeared before rename.');
+        }
+        if (!isset($current['Configuration']) || !is_array($current['Configuration'])) {
+            throw new JellyfinException('Jellyfin user response is missing configuration required for a safe rename.');
+        }
+
+        // The canonical 10.11+ update route expects a complete UserDto and
+        // persists Configuration as part of the same operation. Re-send the
+        // observed DTO with only Name changed so a rename cannot accidentally
+        // reset customer preferences. /Users/{id} is legacy-only in v12.
+        $current['Id'] = $userId;
+        $current['Name'] = $username;
+        $this->http->request('/Users?userId=' . rawurlencode($userId), 'POST', $current);
     }
 
     public function setPolicy(string $userId, array $policy): void
