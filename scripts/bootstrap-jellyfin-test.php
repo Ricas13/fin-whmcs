@@ -68,7 +68,7 @@ function request(string $baseUrl, string $path, string $method = 'GET', ?array $
     return $decoded;
 }
 
-$deadline = microtime(true) + 120;
+$deadline = microtime(true) + 300;
 $publicInfo = null;
 while (microtime(true) < $deadline) {
     try {
@@ -79,12 +79,31 @@ while (microtime(true) < $deadline) {
     }
 }
 if ($publicInfo === null) {
-    fwrite(STDERR, "Jellyfin did not become ready within the bootstrap deadline.\n");
+    fwrite(STDERR, "Jellyfin public API did not become ready within the bootstrap deadline.\n");
     exit(1);
 }
 
 $wizardComplete = (bool) ($publicInfo['StartupWizardCompleted'] ?? false);
 if (!$wizardComplete) {
+    // Jellyfin 12 can expose /System/Info/Public while startup migrations are
+    // still running and return the startup UI as HTTP 503 for API mutations.
+    // Gate on a read-only startup endpoint shared by 10.11 and 12 before any
+    // wizard mutation so retries cannot partially duplicate setup state.
+    $startupReady = false;
+    while (microtime(true) < $deadline) {
+        try {
+            request($baseUrl, '/Startup/Configuration', 'GET', null, $clientAuth);
+            $startupReady = true;
+            break;
+        } catch (Throwable) {
+            usleep(500_000);
+        }
+    }
+    if (!$startupReady) {
+        fwrite(STDERR, "Jellyfin startup API did not become ready within the bootstrap deadline.\n");
+        exit(1);
+    }
+
     request($baseUrl, '/Startup/Configuration', 'POST', [
         'UICulture' => 'en-US',
         'MetadataCountryCode' => 'US',
