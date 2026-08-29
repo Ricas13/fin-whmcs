@@ -1,0 +1,1 @@
+Do not claim Stremio parity until the concrete source audit is complete and runtime semantics are mapped.
