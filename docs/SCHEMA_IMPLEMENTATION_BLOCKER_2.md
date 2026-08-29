@@ -1,0 +1,1 @@
+All schema additions must remain under the canonical addon activation/upgrade path.
