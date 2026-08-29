@@ -1,0 +1,1 @@
+Versioned schema wiring should extend the existing addon activation/upgrade owner rather than introducing a second migration system. The existing addon entrypoint must be inspected before adding tables.
