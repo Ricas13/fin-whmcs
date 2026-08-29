@@ -1,0 +1,1 @@
+Where a real disposable service can run cheaply in CI, prefer it over a hand-built API mock for lifecycle acceptance. Pure HTTP mocks remain useful for precise fault injection.
