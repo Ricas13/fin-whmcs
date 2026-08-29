@@ -1,0 +1,1 @@
+A skipped real-service test is not runtime proof. Runtime proof is recorded only after the disposable external-service environment and module-owned SQL state are mounted and the acceptance assertion actually executes.
