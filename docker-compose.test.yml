@@ -1,0 +1,27 @@
+services:
+  mariadb:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: captainfin_test
+      MARIADB_USER: captainfin
+      MARIADB_PASSWORD: captainfin
+      MARIADB_ROOT_PASSWORD: captainfin-root
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports:
+      - "33067:3306"
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    ports:
+      - "18096:8096"
+    volumes:
+      - jellyfin-test-config:/config
+      - jellyfin-test-cache:/cache
+
+volumes:
+  jellyfin-test-config:
+  jellyfin-test-cache:
