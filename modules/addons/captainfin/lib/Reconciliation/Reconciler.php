@@ -16,17 +16,20 @@ final class Reconciler
     private ServiceStateRepository $services;
     private WhmcsModuleCommandRunner $runner;
     private ReconciliationLock $lock;
+    private ReconciliationPlanner $planner;
 
     public function __construct(
         ?OperationRepository $operations = null,
         ?ServiceStateRepository $services = null,
         ?WhmcsModuleCommandRunner $runner = null,
-        ?ReconciliationLock $lock = null
+        ?ReconciliationLock $lock = null,
+        ?ReconciliationPlanner $planner = null
     ) {
         $this->operations = $operations ?? new OperationRepository();
         $this->services = $services ?? new ServiceStateRepository();
         $this->runner = $runner ?? new WhmcsModuleCommandRunner();
         $this->lock = $lock ?? new ReconciliationLock();
+        $this->planner = $planner ?? new ReconciliationPlanner();
     }
 
     public function run(int $limit = 20): array
@@ -56,76 +59,27 @@ final class Reconciler
             }
 
             $latest = $this->operations->latestForService((int) $operation->service_id);
-            if ($latest !== null && (int) $latest->id !== (int) $operation->id) {
-                $this->operations->markSuperseded(
-                    (int) $operation->id,
-                    sprintf('Superseded by newer CAPTAiNFiN operation #%d.', (int) $latest->id)
-                );
+            $service = $this->services->find((int) $operation->service_id);
+            $plan = $this->planner->plan($operation, $latest, $service, self::MAX_ATTEMPTS);
+
+            if ($plan['action'] === ReconciliationPlanner::SUPERSEDE) {
+                $this->operations->markSuperseded((int) $operation->id, (string) $plan['reason']);
                 $summary['superseded']++;
                 continue;
             }
 
-            if ((int) $operation->attempts >= self::MAX_ATTEMPTS) {
-                $this->operations->markManualAttention(
-                    (int) $operation->id,
-                    sprintf('Automatic reconciliation stopped after %d recorded attempts.', (int) $operation->attempts)
-                );
+            if ($plan['action'] === ReconciliationPlanner::MANUAL_ATTENTION) {
+                $this->operations->markManualAttention((int) $operation->id, (string) $plan['reason']);
                 $summary['manual_attention']++;
                 continue;
             }
 
-            $operationType = trim((string) $operation->operation_type);
-            if ($operationType === 'change_password') {
-                $this->operations->markManualAttention(
-                    (int) $operation->id,
-                    'Automatic password-operation replay is unsafe because the intended password is not stored in the durable journal.'
-                );
-                $summary['manual_attention']++;
-                continue;
-            }
-
-            $service = $this->services->find((int) $operation->service_id);
-            if ($service === null) {
-                $this->operations->markManualAttention(
-                    (int) $operation->id,
-                    'The WHMCS service no longer exists; automatic remote recovery cannot safely reconstruct its credentials or server assignment.'
-                );
-                $summary['manual_attention']++;
-                continue;
-            }
-
-            if (!$this->services->usesCaptainFin($service)) {
-                $this->operations->markManualAttention(
-                    (int) $operation->id,
-                    'The WHMCS service is no longer assigned to the CAPTAiNFiN module; automatic replay was blocked.'
-                );
-                $summary['manual_attention']++;
-                continue;
-            }
-
-            // If billing/admin state has already ended the service, never replay
-            // stale access-granting work. Ask WHMCS to run CAPTAiNFiN termination
-            // instead so durable remote identity can still be cleaned up.
-            $dispatchType = $operationType;
-            if ($this->services->isEnded($service) && $operationType !== 'terminate') {
-                $dispatchType = 'terminate';
-            }
-
-            // A manually suspended service with an abandoned create is ambiguous:
-            // replaying create would temporarily grant active access. A normal
-            // CAPTAiNFiN suspend action would have produced a newer operation and
-            // superseded this create already, so stop rather than guessing.
-            if ($this->services->isSuspended($service) && $operationType === 'create') {
-                $this->operations->markManualAttention(
-                    (int) $operation->id,
-                    'WHMCS currently marks the service Suspended while its create operation is unresolved; automatic creation was blocked to avoid granting active access.'
-                );
-                $summary['manual_attention']++;
-                continue;
-            }
-
+            $dispatchType = (string) $plan['dispatch_type'];
             $result = $this->runner->run($dispatchType, (int) $operation->service_id);
 
+            // Re-entering through WHMCS may create a newer operation if the
+            // current product/service configuration changed since the stale
+            // operation was recorded. Newer intent always wins.
             $latestAfter = $this->operations->latestForService((int) $operation->service_id);
             if ($latestAfter !== null && (int) $latestAfter->id !== (int) $operation->id) {
                 $this->operations->markSuperseded(
