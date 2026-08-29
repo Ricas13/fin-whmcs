@@ -13,13 +13,16 @@ final class LifecycleService
 {
     private OperationRepository $operations;
     private JellyfinLifecycle $jellyfin;
+    private LifecycleLock $lock;
 
     public function __construct(
         ?OperationRepository $operations = null,
-        ?JellyfinLifecycle $jellyfin = null
+        ?JellyfinLifecycle $jellyfin = null,
+        ?LifecycleLock $lock = null
     ) {
         $this->operations = $operations ?? new OperationRepository();
         $this->jellyfin = $jellyfin ?? new JellyfinLifecycle($this->operations);
+        $this->lock = $lock ?? new LifecycleLock();
     }
 
     public function execute(string $operationType, array $params): string
@@ -29,6 +32,20 @@ final class LifecycleService
             return 'CAPTAiNFiN: missing WHMCS service id.';
         }
 
+        try {
+            return $this->lock->run(
+                $serviceId,
+                fn (): string => $this->executeLocked($operationType, $params, $serviceId)
+            );
+        } catch (LifecycleBusyException $error) {
+            return $error->getMessage();
+        } catch (\Throwable $error) {
+            return 'CAPTAiNFiN lifecycle lock error: ' . $error->getMessage();
+        }
+    }
+
+    private function executeLocked(string $operationType, array $params, int $serviceId): string
+    {
         $operation = null;
 
         try {
@@ -47,7 +64,7 @@ final class LifecycleService
 
             if ($operation->state === OperationState::MANUAL_ATTENTION) {
                 return sprintf(
-                    'CAPTAiNFiN operation requires manual attention (operation #%d): %s',
+                    'CAPTAI... operation requires manual attention (operation #%d): %s',
                     (int) $operation->id,
                     (string) ($operation->last_error ?? 'no detail recorded')
                 );
