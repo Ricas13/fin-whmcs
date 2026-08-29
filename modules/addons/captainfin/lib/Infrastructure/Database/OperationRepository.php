@@ -54,6 +54,18 @@ final class OperationRepository
         return Capsule::table(self::TABLE)->where('id', $id)->first();
     }
 
+    public function latestForService(int $serviceId): ?object
+    {
+        if ($serviceId <= 0) {
+            return null;
+        }
+
+        return Capsule::table(self::TABLE)
+            ->where('service_id', $serviceId)
+            ->orderByDesc('id')
+            ->first();
+    }
+
     /**
      * Return operations where automatic replay can materially advance state.
      *
@@ -159,6 +171,21 @@ final class OperationRepository
                 'last_error' => $this->truncate($error),
                 'retry_after' => null,
                 'updated_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
+            ]);
+    }
+
+    public function markSuperseded(int $id, string $reason): void
+    {
+        $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+
+        Capsule::table(self::TABLE)
+            ->where('id', $id)
+            ->update([
+                'state' => OperationState::SUPERSEDED,
+                'last_error' => $this->truncate($reason),
+                'retry_after' => null,
+                'completed_at' => $now,
+                'updated_at' => $now,
             ]);
     }
 
