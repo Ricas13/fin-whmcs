@@ -74,9 +74,10 @@ final class BindingRepository
             'state' => $state,
             'media_server_type' => $provider,
             'media_user_id' => $userId,
-            // Compatibility mirror for installations created by pre-v1
-            // Jellyfin-only builds. New code never uses this field as owner.
-            'jellyfin_user_id' => $provider === 'jellyfin' ? $userId : null,
+            // Compatibility mirror for pre-v1 code paths. media_user_id plus
+            // media_server_type are authoritative and this column will be
+            // removed once all early-development installs are migrated.
+            'jellyfin_user_id' => $userId,
             'remote_username' => $username,
             'remote_identities_json' => $identities,
             'updated_at' => $now,
