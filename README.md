@@ -4,6 +4,16 @@ Native WHMCS media-service provisioning and lifecycle management for **Jellyfin 
 
 This repository is intentionally separate from [`Ricas13/fin-fusion`](https://github.com/Ricas13/fin-fusion). `fin-fusion` is the behavioural reference implementation; this project ports the relevant provisioning, entitlement, policy, reconciliation, activity and integration behaviour into a self-contained WHMCS module.
 
+## Commercial editions
+
+CAPTAiNFiN is developed as one codebase but released as three commercial products:
+
+- **CAPTAiNFiN for Jellyfin** — `captainfin-jellyfin`
+- **CAPTAiNFiN for Emby** — `captainfin-emby`
+- **CAPTAiNFiN Media Suite** — `captainfin-media-suite`, enabling both Jellyfin and Emby
+
+Single-provider release ZIPs physically omit the other provider adapter and carry an embedded edition manifest enforced at runtime. Suspend and terminate remain available after an edition downgrade so CAPTAiNFiN can always revoke existing remote access safely. See [`docs/COMMERCIAL-EDITIONS.md`](docs/COMMERCIAL-EDITIONS.md).
+
 ## Product goals
 
 - Native WHMCS install: no CAPTAiNFiN SaaS, Node service, Docker stack or separate PostgreSQL database.
@@ -35,6 +45,8 @@ CI currently exercises the exported WHMCS lifecycle against disposable real-serv
 
 The runtime suite covers connection, account creation/idempotency, policy/suspension, unsuspension, package changes, password changes, termination and durable SQL state. Provider versions are pinned in CI so upstream tag movement cannot create false confidence.
 
+CI also builds and validates all three commercial edition ZIPs from the same source tree to prove their embedded manifests and provider isolation remain correct.
+
 ## Status
 
-Pre-license hardening is in progress. Core lifecycle/recovery, provider abstraction, policy primitives, diagnostics and runtime compatibility testing are being completed before final validation inside a licensed WHMCS installation.
+Pre-license hardening is in progress. Core lifecycle/recovery, provider abstraction, policy primitives, diagnostics and runtime compatibility testing are being completed before final validation inside a licensed WHMCS installation. The edition capability model is implemented now; final commercial anti-tamper/licence verification will be connected to the same edition IDs before release rather than creating a parallel entitlement system.
