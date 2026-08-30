@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 $origin = rtrim((string) (getenv('CAPTAINFIN_TEST_EMBY_ORIGIN') ?: 'http://127.0.0.1:18097'), '/');
 $adminUser = (string) (getenv('CAPTAINFIN_TEST_EMBY_ADMIN_USER') ?: 'captainfin-admin');
+$adminPassword = (string) (getenv('CAPTAINFIN_TEST_EMBY_ADMIN_PASSWORD') ?: 'CaptainFin-Emby-Test-Admin-Only!');
 $tokenFile = (string) (getenv('CAPTAINFIN_TEST_EMBY_TOKEN_FILE') ?: dirname(__DIR__) . '/.runtime/emby-token');
 $baseUrlFile = (string) (getenv('CAPTAINFIN_TEST_EMBY_BASE_URL_FILE') ?: dirname(__DIR__) . '/.runtime/emby-base-url');
 $clientAuthorization = 'Emby Client="CAPTAiNFiN Tests", Device="CI", DeviceId="captainfin-emby-bootstrap", Version="0.3.0"';
@@ -98,11 +99,14 @@ embyRequest($baseUrl, '/Startup/Configuration', 'POST', [
 ]);
 
 // GET is intentional: the startup service owns the initial admin identity and
-// this proves the default user exists before we mutate it.
+// this proves the default user exists before we mutate it. Current Emby also
+// requires a non-empty Password during this update; omitting it causes the
+// password provider to receive a null newPasswordHash.
 embyRequest($baseUrl, '/Startup/User');
 embyRequest($baseUrl, '/Startup/User', 'POST', [
     'Name' => $adminUser,
     'ConnectUserName' => null,
+    'Password' => $adminPassword,
 ]);
 embyRequest($baseUrl, '/Startup/RemoteAccess', 'POST', [
     'EnableRemoteAccess' => true,
@@ -114,7 +118,7 @@ $auth = embyRequest(
     $baseUrl,
     '/Users/AuthenticateByName',
     'POST',
-    ['Username' => $adminUser, 'Pw' => ''],
+    ['Username' => $adminUser, 'Pw' => $adminPassword],
     ['X-Emby-Authorization: ' . $clientAuthorization]
 );
 $token = trim((string) ($auth['AccessToken'] ?? ''));
