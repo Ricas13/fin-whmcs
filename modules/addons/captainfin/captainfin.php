@@ -16,8 +16,8 @@ function captainfin_config(): array
 {
     return [
         'name' => 'CAPTAiNFiN',
-        'description' => 'Media-service provisioning, policy, reconciliation and diagnostics for WHMCS.',
-        'version' => '0.2.0-dev',
+        'description' => 'Jellyfin and Emby provisioning, policy, reconciliation and diagnostics for WHMCS.',
+        'version' => '0.3.0-dev',
         'author' => 'CAPTAiNFiN',
         'language' => 'english',
         'fields' => [
@@ -52,8 +52,11 @@ function captainfin_upgrade(array $vars): void
 {
     $installed = (string) ($vars['version'] ?? '0.0.0');
     if (version_compare($installed, '0.2.0', '<')) {
-        // Schema::install() is deliberately idempotent. Version 0.2 adds the
-        // integration/activity/telemetry/health/audit operational tables.
+        Schema::install();
+    }
+    if (version_compare($installed, '0.3.0', '<')) {
+        // 0.3 makes media-server ownership provider-neutral and backfills
+        // Jellyfin-only development rows without dropping operational history.
         Schema::install();
     }
 }
@@ -94,7 +97,7 @@ function captainfin_output(array $vars): void
 
     echo '<div class="container-fluid">';
     echo '<h2>CAPTAiNFiN</h2>';
-    echo '<p>Native WHMCS media provisioning and lifecycle management.</p>';
+    echo '<p>Native WHMCS Jellyfin/Emby provisioning and lifecycle management.</p>';
     echo '<div class="row">';
     captainfin_render_stat('Schema', $schemaHealthy ? 'Healthy' : 'Incomplete');
     captainfin_render_stat('Service bindings', (string) $bindings);
@@ -105,8 +108,8 @@ function captainfin_output(array $vars): void
     echo '</div>';
 
     echo '<div class="alert alert-info" style="margin-top: 20px">';
-    echo '<strong>Development build.</strong> Jellyfin lifecycle and automatic operation recovery are active. '
-        . 'Multi-server policy, activity enforcement and cross-integration adapters are under pre-license hardening.';
+    echo '<strong>Development build.</strong> Jellyfin and Emby share the durable media-server lifecycle and recovery model. '
+        . 'Activity enforcement and cross-integration adapters remain under pre-license hardening.';
     echo '</div>';
     echo '</div>';
 }
