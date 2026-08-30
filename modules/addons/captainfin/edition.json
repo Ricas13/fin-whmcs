@@ -1,0 +1,5 @@
+{
+  "edition": "suite",
+  "development": true,
+  "sku": "captainfin-media-suite"
+}
