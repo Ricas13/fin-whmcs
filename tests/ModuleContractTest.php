@@ -45,7 +45,7 @@ final class ModuleContractTest extends TestCase
         self::assertTrue(function_exists('captainfin_ChangePassword'));
 
         $metadata = captainfin_MetaData();
-        self::assertSame('CAPTAiNFiN', $metadata['DisplayName']);
+        self::assertSame('CAPTAiNFiN Media Suite', $metadata['DisplayName']);
         self::assertTrue($metadata['RequiresServer']);
     }
 
@@ -59,7 +59,7 @@ final class ModuleContractTest extends TestCase
         self::assertGreaterThanOrEqual(3, Schema::VERSION);
 
         $config = captainfin_config();
-        self::assertSame('CAPTAiNFiN', $config['name']);
+        self::assertSame('CAPTAiNFiN Media Suite', $config['name']);
         self::assertSame('0.3.0-dev', $config['version']);
     }
 
