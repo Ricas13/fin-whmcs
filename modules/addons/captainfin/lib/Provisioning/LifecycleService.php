@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CaptainFin\Whmcs\Provisioning;
 
+use CaptainFin\Whmcs\Commercial\EditionGate;
 use CaptainFin\Whmcs\Domain\OperationState;
 use CaptainFin\Whmcs\Infrastructure\Database\OperationRepository;
 use CaptainFin\Whmcs\Infrastructure\Database\ProductPolicyRepository;
@@ -17,19 +18,22 @@ final class LifecycleService
     private MediaServerLifecycle $mediaServer;
     private LifecycleLock $lock;
     private LifecycleFailureClassifier $failureClassifier;
+    private EditionGate $editionGate;
 
     public function __construct(
         ?OperationRepository $operations = null,
         ?MediaServerLifecycle $mediaServer = null,
         ?LifecycleLock $lock = null,
         ?LifecycleFailureClassifier $failureClassifier = null,
-        ?ProductPolicyRepository $policies = null
+        ?ProductPolicyRepository $policies = null,
+        ?EditionGate $editionGate = null
     ) {
         $this->operations = $operations ?? new OperationRepository();
         $this->policies = $policies ?? new ProductPolicyRepository();
         $this->mediaServer = $mediaServer ?? new MediaServerLifecycle($this->operations);
         $this->lock = $lock ?? new LifecycleLock();
         $this->failureClassifier = $failureClassifier ?? new LifecycleFailureClassifier();
+        $this->editionGate = $editionGate ?? new EditionGate();
     }
 
     public function execute(string $operationType, array $params): string
@@ -56,6 +60,13 @@ final class LifecycleService
         $operation = null;
 
         try {
+            $provider = MediaServerType::fromWhmcs($params);
+
+            // Commercial editions gate access-granting/mutating operations before
+            // a durable provider operation is created. Suspend/terminate remain
+            // available after a downgrade so we never strand remote access.
+            $this->editionGate->assertLifecycleAllowed($operationType, $provider);
+
             $target = $this->targetSnapshot($operationType, $params);
             $targetJson = $this->encode($target);
             $targetHash = hash('sha256', $targetJson);
