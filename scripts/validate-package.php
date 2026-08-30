@@ -5,6 +5,7 @@ declare(strict_types=1);
 $root = dirname(__DIR__);
 $required = [
     'modules/addons/captainfin/captainfin.php',
+    'modules/addons/captainfin/edition.json',
     'modules/addons/captainfin/lib/autoload.php',
     'modules/servers/captainfin/captainfin.php',
 ];
@@ -14,6 +15,12 @@ foreach ($required as $path) {
     if (!is_file($root . '/' . $path)) {
         $errors[] = 'Missing required runtime file: ' . $path;
     }
+}
+
+$manifestRaw = @file_get_contents($root . '/modules/addons/captainfin/edition.json');
+$manifest = is_string($manifestRaw) ? json_decode($manifestRaw, true) : null;
+if (!is_array($manifest) || !in_array($manifest['edition'] ?? null, ['jellyfin', 'emby', 'suite'], true)) {
+    $errors[] = 'Invalid CAPTAiNFiN edition manifest.';
 }
 
 $forbiddenRuntimeNames = ['.env', '.git', 'vendor', 'tests', 'phpunit.xml', 'composer.lock'];
