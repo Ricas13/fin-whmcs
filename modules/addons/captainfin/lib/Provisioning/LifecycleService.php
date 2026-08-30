@@ -7,26 +7,27 @@ namespace CaptainFin\Whmcs\Provisioning;
 use CaptainFin\Whmcs\Domain\OperationState;
 use CaptainFin\Whmcs\Infrastructure\Database\OperationRepository;
 use CaptainFin\Whmcs\Infrastructure\Database\ProductPolicyRepository;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerType;
 use DateTimeImmutable;
 
 final class LifecycleService
 {
     private OperationRepository $operations;
     private ProductPolicyRepository $policies;
-    private JellyfinLifecycle $jellyfin;
+    private MediaServerLifecycle $mediaServer;
     private LifecycleLock $lock;
     private LifecycleFailureClassifier $failureClassifier;
 
     public function __construct(
         ?OperationRepository $operations = null,
-        ?JellyfinLifecycle $jellyfin = null,
+        ?MediaServerLifecycle $mediaServer = null,
         ?LifecycleLock $lock = null,
         ?LifecycleFailureClassifier $failureClassifier = null,
         ?ProductPolicyRepository $policies = null
     ) {
         $this->operations = $operations ?? new OperationRepository();
         $this->policies = $policies ?? new ProductPolicyRepository();
-        $this->jellyfin = $jellyfin ?? new JellyfinLifecycle($this->operations);
+        $this->mediaServer = $mediaServer ?? new MediaServerLifecycle($this->operations);
         $this->lock = $lock ?? new LifecycleLock();
         $this->failureClassifier = $failureClassifier ?? new LifecycleFailureClassifier();
     }
@@ -58,7 +59,7 @@ final class LifecycleService
             $target = $this->targetSnapshot($operationType, $params);
             $targetJson = $this->encode($target);
             $targetHash = hash('sha256', $targetJson);
-            $operationKey = hash('sha256', sprintf('v2|%d|%s|%s', $serviceId, $operationType, $targetHash));
+            $operationKey = hash('sha256', sprintf('v3|%d|%s|%s', $serviceId, $operationType, $targetHash));
 
             $operation = $this->operations->findOrCreate(
                 $operationKey,
@@ -76,16 +77,14 @@ final class LifecycleService
                 );
             }
 
-            // Persist the normalized policy before remote mutation so the CLI
-            // sampler/reconciler can operate from module-owned desired state.
-            // If this local write fails, the durable operation remains retryable
-            // and no external mutation is attempted under an unknown policy.
+            // Persist normalized desired state before any provider mutation so
+            // sampler/reconciliation jobs never execute against unknown policy.
             $this->policies->upsertFromWhmcsParams($params);
 
-            // Even a previously converged operation is observed/applied again.
-            // This keeps duplicate WHMCS callbacks idempotent while also letting
-            // them repair remote drift instead of trusting stale local success.
-            $this->jellyfin->execute($operationType, $params, $operation);
+            // Re-observe and converge even when the same operation key was
+            // previously completed. Duplicate WHMCS callbacks therefore remain
+            // idempotent while also repairing remote drift on Jellyfin or Emby.
+            $this->mediaServer->execute($operationType, $params, $operation);
 
             return 'success';
         } catch (\Throwable $error) {
@@ -138,6 +137,7 @@ final class LifecycleService
             'client_id' => (int) ($params['userid'] ?? 0),
             'product_id' => (int) ($params['pid'] ?? 0),
             'server_id' => (int) ($params['serverid'] ?? 0),
+            'media_server_type' => MediaServerType::fromWhmcs($params),
             'server_endpoint_fingerprint' => hash('sha256', implode('|', [
                 (string) ($params['serverhostname'] ?? ''),
                 (string) ($params['serverport'] ?? ''),
