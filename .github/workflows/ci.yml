@@ -47,6 +47,33 @@ jobs:
       - name: Run contract tests
         run: vendor/bin/phpunit
 
+  edition-packages:
+    name: Commercial edition packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: json,mbstring,zip
+
+      - name: Build Jellyfin edition
+        run: php scripts/build-edition.php jellyfin
+
+      - name: Build Emby edition
+        run: php scripts/build-edition.php emby
+
+      - name: Build Media Suite edition
+        run: php scripts/build-edition.php suite
+
+      - name: Validate edition isolation and manifests
+        run: php scripts/validate-editions.php
+
   jellyfin-runtime:
     name: Jellyfin ${{ matrix.jellyfin }} runtime
     runs-on: ubuntu-latest
