@@ -10,4 +10,10 @@ final class RuntimeSkip
     {
         return trim((string) getenv('CAPTAINFIN_TEST_JELLYFIN_API_KEY')) !== '';
     }
+
+    public static function embyConfigured(): bool
+    {
+        return trim((string) getenv('CAPTAINFIN_TEST_EMBY_API_KEY')) !== ''
+            && trim((string) getenv('CAPTAINFIN_TEST_EMBY_URL')) !== '';
+    }
 }
