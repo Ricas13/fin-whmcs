@@ -1,0 +1,25 @@
+services:
+  mariadb:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: captainfin_test
+      MARIADB_USER: captainfin
+      MARIADB_PASSWORD: captainfin
+      MARIADB_ROOT_PASSWORD: captainfin-root
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports:
+      - "33067:3306"
+
+  emby:
+    image: emby/embyserver:${CAPTAINFIN_TEST_EMBY_IMAGE_TAG:-4.9.5.0}
+    ports:
+      - "18097:8096"
+    volumes:
+      - emby-test-config:/config
+
+volumes:
+  emby-test-config:
