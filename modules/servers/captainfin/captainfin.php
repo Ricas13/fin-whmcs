@@ -6,6 +6,8 @@ if (!defined('WHMCS')) {
     die('This file cannot be accessed directly.');
 }
 
+use CaptainFin\Whmcs\Commercial\Edition;
+use CaptainFin\Whmcs\Commercial\EditionGate;
 use CaptainFin\Whmcs\Integrations\Emby\EmbyClient;
 use CaptainFin\Whmcs\Integrations\Emby\HttpClient as EmbyHttpClient;
 use CaptainFin\Whmcs\Integrations\Emby\ServerConfig as EmbyServerConfig;
@@ -25,8 +27,10 @@ require_once $captainfinAutoloader;
 
 function captainfin_MetaData(): array
 {
+    $edition = Edition::current();
+
     return [
-        'DisplayName' => 'CAPTAiNFiN',
+        'DisplayName' => $edition->displayName(),
         'APIVersion' => '1.1',
         'RequiresServer' => true,
         'DefaultNonSSLPort' => 8096,
@@ -144,6 +148,8 @@ function captainfin_TestConnection(array $params): array
 {
     try {
         $provider = MediaServerType::fromWhmcs($params);
+        (new EditionGate())->assertProviderAllowed($provider);
+
         if ($provider === MediaServerType::EMBY) {
             $info = (new EmbyClient(new EmbyHttpClient(EmbyServerConfig::fromWhmcs($params))))->systemInfo();
             $label = 'Emby';
@@ -153,7 +159,7 @@ function captainfin_TestConnection(array $params): array
         }
 
         $version = trim((string) ($info['Version'] ?? ''));
-        $serverName = trim((string) ($info['ServerName'] ?? $info['ServerName'] ?? ''));
+        $serverName = trim((string) ($info['ServerName'] ?? ''));
         $details = array_values(array_filter([
             $serverName,
             $version !== '' ? $label . ' ' . $version : $label,
