@@ -6,9 +6,13 @@ if (!defined('WHMCS')) {
     die('This file cannot be accessed directly.');
 }
 
-use CaptainFin\Whmcs\Integrations\Jellyfin\HttpClient;
+use CaptainFin\Whmcs\Integrations\Emby\EmbyClient;
+use CaptainFin\Whmcs\Integrations\Emby\HttpClient as EmbyHttpClient;
+use CaptainFin\Whmcs\Integrations\Emby\ServerConfig as EmbyServerConfig;
+use CaptainFin\Whmcs\Integrations\Jellyfin\HttpClient as JellyfinHttpClient;
 use CaptainFin\Whmcs\Integrations\Jellyfin\JellyfinClient;
-use CaptainFin\Whmcs\Integrations\Jellyfin\ServerConfig;
+use CaptainFin\Whmcs\Integrations\Jellyfin\ServerConfig as JellyfinServerConfig;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerType;
 use CaptainFin\Whmcs\Provisioning\LifecycleService;
 
 $captainfinAutoloader = dirname(__DIR__, 2) . '/addons/captainfin/lib/autoload.php';
@@ -43,7 +47,7 @@ function captainfin_ConfigOptions(): array
         'Libraries' => [
             'Type' => 'text',
             'Size' => '50',
-            'Description' => 'Comma-separated allowed Jellyfin libraries. Empty grants all libraries.',
+            'Description' => 'Comma-separated allowed media libraries. Empty grants all libraries.',
             'SimpleMode' => true,
         ],
         'User Selectable Libraries' => [
@@ -139,16 +143,26 @@ function captainfin_ConfigOptions(): array
 function captainfin_TestConnection(array $params): array
 {
     try {
-        $config = ServerConfig::fromWhmcs($params);
-        $info = (new JellyfinClient(new HttpClient($config)))->systemInfo();
+        $provider = MediaServerType::fromWhmcs($params);
+        if ($provider === MediaServerType::EMBY) {
+            $info = (new EmbyClient(new EmbyHttpClient(EmbyServerConfig::fromWhmcs($params))))->systemInfo();
+            $label = 'Emby';
+        } else {
+            $info = (new JellyfinClient(new JellyfinHttpClient(JellyfinServerConfig::fromWhmcs($params))))->systemInfo();
+            $label = 'Jellyfin';
+        }
+
         $version = trim((string) ($info['Version'] ?? ''));
-        $serverName = trim((string) ($info['ServerName'] ?? ''));
-        $details = array_values(array_filter([$serverName, $version !== '' ? 'Jellyfin ' . $version : null]));
+        $serverName = trim((string) ($info['ServerName'] ?? $info['ServerName'] ?? ''));
+        $details = array_values(array_filter([
+            $serverName,
+            $version !== '' ? $label . ' ' . $version : $label,
+        ]));
 
         return [
             'success' => true,
             'error' => '',
-            'message' => $details !== [] ? implode(' · ', $details) : 'Connected to Jellyfin successfully.',
+            'message' => implode(' · ', $details) . ' connected successfully.',
         ];
     } catch (Throwable $error) {
         return [
