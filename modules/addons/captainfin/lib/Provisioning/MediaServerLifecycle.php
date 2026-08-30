@@ -1,0 +1,482 @@
+<?php
+
+declare(strict_types=1);
+
+namespace CaptainFin\Whmcs\Provisioning;
+
+use CaptainFin\Whmcs\Infrastructure\Database\BindingRepository;
+use CaptainFin\Whmcs\Infrastructure\Database\OperationRepository;
+use CaptainFin\Whmcs\Integrations\Emby\EmbyClient;
+use CaptainFin\Whmcs\Integrations\Emby\HttpClient as EmbyHttpClient;
+use CaptainFin\Whmcs\Integrations\Emby\PolicyBuilder as EmbyPolicyBuilder;
+use CaptainFin\Whmcs\Integrations\Emby\ServerConfig as EmbyServerConfig;
+use CaptainFin\Whmcs\Integrations\Jellyfin\HttpClient as JellyfinHttpClient;
+use CaptainFin\Whmcs\Integrations\Jellyfin\JellyfinClient;
+use CaptainFin\Whmcs\Integrations\Jellyfin\PolicyBuilder as JellyfinPolicyBuilder;
+use CaptainFin\Whmcs\Integrations\Jellyfin\ServerConfig as JellyfinServerConfig;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerClient;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerException;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerType;
+
+final class MediaServerLifecycle
+{
+    private OperationRepository $operations;
+    private BindingRepository $bindings;
+
+    public function __construct(
+        ?OperationRepository $operations = null,
+        ?BindingRepository $bindings = null
+    ) {
+        $this->operations = $operations ?? new OperationRepository();
+        $this->bindings = $bindings ?? new BindingRepository();
+    }
+
+    public function execute(string $operationType, array $params, object $operation): void
+    {
+        $client = $this->client($params);
+
+        match ($operationType) {
+            'create' => $this->create($client, $params, $operation),
+            'suspend' => $this->suspend($client, $params, $operation),
+            'unsuspend' => $this->activate($client, $params, $operation, true),
+            'change_package' => $this->activate($client, $params, $operation, false),
+            'change_password' => $this->changePassword($client, $params, $operation),
+            'terminate' => $this->terminate($client, $params, $operation),
+            default => throw new \InvalidArgumentException('Unsupported CAPTAiNFiN lifecycle operation: ' . $operationType),
+        };
+    }
+
+    private function client(array $params): MediaServerClient
+    {
+        return match (MediaServerType::fromWhmcs($params)) {
+            MediaServerType::EMBY => new EmbyClient(new EmbyHttpClient(EmbyServerConfig::fromWhmcs($params))),
+            default => new JellyfinClient(new JellyfinHttpClient(JellyfinServerConfig::fromWhmcs($params))),
+        };
+    }
+
+    private function create(MediaServerClient $client, array $params, object $operation): void
+    {
+        $serviceId = $this->serviceId($params);
+        $binding = $this->bindings->findByServiceId($serviceId);
+        $this->assertBindingMatches($binding, $params, $client);
+
+        $username = $this->desiredUsername($params, $binding);
+        $temporaryUsername = $this->temporaryUsername($serviceId, $operation);
+        $password = $this->servicePassword($params);
+        $policy = $this->activePolicy($client, $params);
+        $user = null;
+        $boundUserId = $this->bindingUserId($binding);
+
+        if ($boundUserId !== '') {
+            $user = $client->getUser($boundUserId);
+        }
+
+        if ($user === null && trim((string) ($operation->remote_ref ?? '')) !== '') {
+            $candidate = $client->getUser((string) $operation->remote_ref);
+            if ($candidate !== null) {
+                $remoteName = trim((string) ($candidate['Name'] ?? ''));
+                if (!in_array($this->nameKey($remoteName), [
+                    $this->nameKey($username),
+                    $this->nameKey($temporaryUsername),
+                ], true)) {
+                    throw new ManualAttentionException(
+                        sprintf('Previously recorded %s remote identity no longer matches this provisioning operation.', $this->providerLabel($client))
+                    );
+                }
+                $user = $candidate;
+            }
+        }
+
+        if ($user === null) {
+            $existingDesired = $client->findUserByName($username);
+            if ($existingDesired !== null) {
+                throw new ManualAttentionException(sprintf(
+                    '%s username "%s" already exists but is not safely bound to this WHMCS service.',
+                    $this->providerLabel($client),
+                    $username
+                ));
+            }
+
+            $user = $client->findUserByName($temporaryUsername);
+            if ($user === null) {
+                $bootstrapPassword = $this->bootstrapPassword();
+                try {
+                    $user = $client->createUser($temporaryUsername, $bootstrapPassword);
+                } catch (MediaServerException $error) {
+                    if (!$error->isAmbiguous()) {
+                        throw $error;
+                    }
+
+                    try {
+                        $observed = $client->findUserByName($temporaryUsername);
+                    } catch (\Throwable) {
+                        throw $error;
+                    }
+                    if ($observed === null) {
+                        throw $error;
+                    }
+                    $user = $observed;
+                }
+            }
+        }
+
+        $userId = trim((string) ($user['Id'] ?? ''));
+        if ($userId === '') {
+            throw new MediaServerException($this->providerLabel($client) . ' user is missing its remote ID.');
+        }
+
+        $this->operations->markRemoteApplied((int) $operation->id, $userId, [
+            'stage' => 'user_exists',
+            'provider' => $client->providerName(),
+            'media_user_id' => $userId,
+            'observed_username' => (string) ($user['Name'] ?? ''),
+            'desired_username' => $username,
+        ]);
+
+        // The account only receives its final customer credential after the
+        // restrictive entitlement policy has converged.
+        $client->setPolicy($userId, $policy);
+        $this->ensureUsername($client, $userId, $username);
+        $client->setPassword($userId, $password);
+
+        $this->operations->markRemoteApplied((int) $operation->id, $userId, [
+            'stage' => 'ready',
+            'provider' => $client->providerName(),
+            'media_user_id' => $userId,
+            'username' => $username,
+            'disabled' => false,
+        ]);
+
+        $this->bindings->upsertMediaServerBinding($client->providerName(), $params, $userId, $username, 'active');
+        $this->operations->markLocalApplied((int) $operation->id);
+    }
+
+    private function suspend(MediaServerClient $client, array $params, object $operation): void
+    {
+        $binding = $this->requiredBinding($params, $client);
+        $userId = $this->bindingUserId($binding);
+        $user = $client->getUser($userId);
+
+        if ($user !== null) {
+            $client->setPolicy($userId, $this->disabledPolicy($client));
+        }
+
+        $this->operations->markRemoteApplied((int) $operation->id, $userId, [
+            'provider' => $client->providerName(),
+            'media_user_id' => $userId,
+            'disabled' => true,
+            'remote_missing' => $user === null,
+        ]);
+        $this->bindings->setState($this->serviceId($params), 'suspended');
+        $this->operations->markLocalApplied((int) $operation->id);
+    }
+
+    private function activate(MediaServerClient $client, array $params, object $operation, bool $recreateMissing): void
+    {
+        $binding = $this->requiredBinding($params, $client);
+        $userId = $this->bindingUserId($binding);
+        $user = $client->getUser($userId);
+
+        if ($user === null) {
+            if (!$recreateMissing) {
+                throw new ManualAttentionException(sprintf(
+                    'The bound %s user is missing; package change cannot safely recreate it.',
+                    $this->providerLabel($client)
+                ));
+            }
+            $this->create($client, $params, $operation);
+            return;
+        }
+
+        $client->setPolicy($userId, $this->activePolicy($client, $params));
+        $this->operations->markRemoteApplied((int) $operation->id, $userId, [
+            'provider' => $client->providerName(),
+            'media_user_id' => $userId,
+            'username' => (string) ($user['Name'] ?? $binding->remote_username),
+            'disabled' => false,
+        ]);
+        $this->bindings->setState($this->serviceId($params), 'active');
+        $this->operations->markLocalApplied((int) $operation->id);
+    }
+
+    private function changePassword(MediaServerClient $client, array $params, object $operation): void
+    {
+        $binding = $this->requiredBinding($params, $client);
+        $userId = $this->bindingUserId($binding);
+
+        if ($client->getUser($userId) === null) {
+            throw new ManualAttentionException(sprintf(
+                'The bound %s user is missing; password change was not applied.',
+                $this->providerLabel($client)
+            ));
+        }
+
+        $client->setPassword($userId, $this->servicePassword($params));
+        $this->operations->markRemoteApplied((int) $operation->id, $userId, [
+            'provider' => $client->providerName(),
+            'media_user_id' => $userId,
+            'password_updated' => true,
+        ]);
+        $this->operations->markLocalApplied((int) $operation->id);
+    }
+
+    private function terminate(MediaServerClient $client, array $params, object $operation): void
+    {
+        $serviceId = $this->serviceId($params);
+        $binding = $this->bindings->findByServiceId($serviceId);
+        $this->assertBindingMatches($binding, $params, $client);
+
+        $userId = $this->bindingUserId($binding);
+        if ($userId === '') {
+            $userId = trim((string) ($operation->remote_ref ?? ''));
+        }
+        if ($userId === '') {
+            $userId = (string) ($this->operations->latestKnownRemoteRefForService($serviceId) ?? '');
+        }
+
+        if ($userId !== '') {
+            try {
+                $client->deleteUser($userId);
+            } catch (MediaServerException $error) {
+                if (!$error->isAmbiguous()) {
+                    throw $error;
+                }
+                try {
+                    $remaining = $client->getUser($userId);
+                } catch (\Throwable) {
+                    throw $error;
+                }
+                if ($remaining !== null) {
+                    throw $error;
+                }
+            }
+
+            $this->operations->markRemoteApplied((int) $operation->id, $userId, [
+                'provider' => $client->providerName(),
+                'media_user_id' => $userId,
+                'deleted' => true,
+            ]);
+        } else {
+            $username = $this->desiredUsername($params, $binding);
+            $sameName = $client->findUserByName($username);
+            if ($sameName !== null) {
+                throw new ManualAttentionException(sprintf(
+                    'An unbound %s user named "%s" exists; CAPTAiNFiN will not delete it without ownership proof.',
+                    $this->providerLabel($client),
+                    $username
+                ));
+            }
+
+            $this->operations->markRemoteApplied((int) $operation->id, null, [
+                'provider' => $client->providerName(),
+                'deleted' => true,
+                'known_remote_identity' => false,
+                'expected_username_absent' => true,
+            ]);
+        }
+
+        if ($binding !== null) {
+            $this->bindings->setState($serviceId, 'terminated');
+        }
+        $this->operations->markLocalApplied((int) $operation->id);
+    }
+
+    private function ensureUsername(MediaServerClient $client, string $userId, string $username): void
+    {
+        $current = $client->getUser($userId);
+        if ($current === null) {
+            throw new MediaServerException($this->providerLabel($client) . ' user disappeared before username convergence.');
+        }
+
+        if ($this->nameKey((string) ($current['Name'] ?? '')) === $this->nameKey($username)) {
+            return;
+        }
+
+        $conflict = $client->findUserByName($username);
+        if ($conflict !== null && (string) ($conflict['Id'] ?? '') !== $userId) {
+            throw new ManualAttentionException(sprintf(
+                '%s username "%s" became occupied before provisioning completed.',
+                $this->providerLabel($client),
+                $username
+            ));
+        }
+
+        try {
+            $client->renameUser($userId, $username);
+        } catch (MediaServerException $error) {
+            if (!$error->isAmbiguous()) {
+                throw $error;
+            }
+            try {
+                $observed = $client->getUser($userId);
+            } catch (\Throwable) {
+                throw $error;
+            }
+            if ($observed === null || $this->nameKey((string) ($observed['Name'] ?? '')) !== $this->nameKey($username)) {
+                throw $error;
+            }
+        }
+    }
+
+    private function activePolicy(MediaServerClient $client, array $params): array
+    {
+        $requested = $this->configuredLibraries($params);
+        if ($requested === []) {
+            return $this->buildActivePolicy($client, $params, true, []);
+        }
+
+        $resolved = $client->resolveLibraryNames($requested);
+        if ($resolved['missing'] !== []) {
+            throw new ManualAttentionException(sprintf(
+                'Configured %s libraries are missing on the assigned server: %s',
+                $this->providerLabel($client),
+                implode(', ', $resolved['missing'])
+            ));
+        }
+
+        return $this->buildActivePolicy($client, $params, false, $resolved['enabledFolders']);
+    }
+
+    private function buildActivePolicy(MediaServerClient $client, array $params, bool $allFolders, array $folders): array
+    {
+        return $client->providerName() === MediaServerType::EMBY
+            ? EmbyPolicyBuilder::active($params, $allFolders, $folders)
+            : JellyfinPolicyBuilder::active($params, $allFolders, $folders);
+    }
+
+    private function disabledPolicy(MediaServerClient $client): array
+    {
+        return $client->providerName() === MediaServerType::EMBY
+            ? EmbyPolicyBuilder::disabled()
+            : JellyfinPolicyBuilder::disabled();
+    }
+
+    private function configuredLibraries(array $params): array
+    {
+        $raw = (string) ($params['configoption2'] ?? '');
+        if (trim($raw) === '') {
+            return [];
+        }
+
+        $values = preg_split('/\s*,\s*/', $raw) ?: [];
+        $result = [];
+        foreach ($values as $value) {
+            $value = trim($value);
+            if ($value !== '') {
+                $result[$this->nameKey($value)] = $value;
+            }
+        }
+        return array_values($result);
+    }
+
+    private function requiredBinding(array $params, MediaServerClient $client): object
+    {
+        $binding = $this->bindings->findByServiceId($this->serviceId($params));
+        if ($binding === null || $this->bindingUserId($binding) === '') {
+            throw new ManualAttentionException('No durable media-server binding exists for this WHMCS service.');
+        }
+        $this->assertBindingMatches($binding, $params, $client);
+        return $binding;
+    }
+
+    private function assertBindingMatches(?object $binding, array $params, MediaServerClient $client): void
+    {
+        if ($binding === null) {
+            return;
+        }
+
+        $boundProvider = $this->bindings->providerFor($binding);
+        if ($boundProvider !== $client->providerName()) {
+            throw new ManualAttentionException(sprintf(
+                'This service is bound to %s but the WHMCS server is configured as %s. Provider migration requires an explicit migration workflow.',
+                ucfirst($boundProvider),
+                $this->providerLabel($client)
+            ));
+        }
+
+        if ($binding->server_id !== null) {
+            $assignedServerId = (int) ($params['serverid'] ?? 0);
+            if ($assignedServerId > 0 && (int) $binding->server_id !== $assignedServerId) {
+                throw new ManualAttentionException(
+                    'This service is bound to a different media server. Server migration must run through the migration workflow.'
+                );
+            }
+        }
+    }
+
+    private function bindingUserId(?object $binding): string
+    {
+        return $binding === null ? '' : trim((string) ($binding->jellyfin_user_id ?? ''));
+    }
+
+    private function desiredUsername(array $params, ?object $binding = null): string
+    {
+        $bound = trim((string) ($binding->remote_username ?? ''));
+        if ($bound !== '') {
+            return $bound;
+        }
+
+        $candidate = trim((string) ($params['username'] ?? ''));
+        if ($candidate === '') {
+            $email = trim((string) ($params['clientsdetails']['email'] ?? ''));
+            $candidate = strstr($email, '@', true) ?: $email;
+        }
+        if ($candidate === '') {
+            $candidate = 'user' . $this->serviceId($params);
+        }
+
+        $candidate = preg_replace('/[^A-Za-z0-9._@+\-]/', '_', $candidate) ?? '';
+        $candidate = trim($candidate, '._-');
+        $candidate = mb_substr($candidate, 0, 80);
+        if (mb_strlen($candidate) < 3) {
+            $candidate = 'user' . $this->serviceId($params);
+        }
+        if (!preg_match('/^[A-Za-z0-9._@+\-]{3,80}$/', $candidate)) {
+            throw new \InvalidArgumentException('Unable to derive a valid media-server username for this service.');
+        }
+        return $candidate;
+    }
+
+    private function temporaryUsername(int $serviceId, object $operation): string
+    {
+        $operationKey = trim((string) ($operation->operation_key ?? ''));
+        if ($operationKey === '') {
+            throw new \RuntimeException('Durable operation key is required for media-server provisioning.');
+        }
+        return sprintf('cf_%d_%s', $serviceId, substr(hash('sha256', $operationKey), 0, 16));
+    }
+
+    private function servicePassword(array $params): string
+    {
+        $password = (string) ($params['password'] ?? '');
+        $length = strlen($password);
+        if ($length < 8 || $length > 200) {
+            throw new \InvalidArgumentException('Media-server password must be between 8 and 200 characters.');
+        }
+        return $password;
+    }
+
+    private function bootstrapPassword(): string
+    {
+        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    }
+
+    private function serviceId(array $params): int
+    {
+        $serviceId = (int) ($params['serviceid'] ?? 0);
+        if ($serviceId <= 0) {
+            throw new \InvalidArgumentException('WHMCS service id is required.');
+        }
+        return $serviceId;
+    }
+
+    private function providerLabel(MediaServerClient $client): string
+    {
+        return $client->providerName() === MediaServerType::EMBY ? 'Emby' : 'Jellyfin';
+    }
+
+    private function nameKey(string $value): string
+    {
+        return mb_strtolower(trim($value), 'UTF-8');
+    }
+}
