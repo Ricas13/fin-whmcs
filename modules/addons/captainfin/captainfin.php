@@ -6,6 +6,7 @@ if (!defined('WHMCS')) {
     die('This file cannot be accessed directly.');
 }
 
+use CaptainFin\Whmcs\Commercial\Edition;
 use CaptainFin\Whmcs\Diagnostics\OperationDiagnosticsRepository;
 use CaptainFin\Whmcs\Infrastructure\Database\Schema;
 use WHMCS\Database\Capsule;
@@ -14,9 +15,14 @@ require_once __DIR__ . '/lib/autoload.php';
 
 function captainfin_config(): array
 {
+    $edition = Edition::current();
+
     return [
-        'name' => 'CAPTAiNFiN',
-        'description' => 'Jellyfin and Emby provisioning, policy, reconciliation and diagnostics for WHMCS.',
+        'name' => $edition->displayName(),
+        'description' => sprintf(
+            '%s provisioning, policy, reconciliation and diagnostics for WHMCS.',
+            $edition->shortLabel()
+        ),
         'version' => '0.3.0-dev',
         'author' => 'CAPTAiNFiN',
         'language' => 'english',
@@ -81,6 +87,7 @@ function captainfin_deactivate(): array
 function captainfin_output(array $vars): void
 {
     try {
+        $edition = Edition::current();
         $health = Schema::health();
         $operations = Capsule::table('mod_captainfin_operations')->count();
         $bindings = Capsule::table('mod_captainfin_service_bindings')->count();
@@ -96,20 +103,25 @@ function captainfin_output(array $vars): void
     $schemaHealthy = !in_array(false, $health, true);
 
     echo '<div class="container-fluid">';
-    echo '<h2>CAPTAiNFiN</h2>';
-    echo '<p>Native WHMCS Jellyfin/Emby provisioning and lifecycle management.</p>';
+    echo '<h2>' . htmlspecialchars($edition->displayName(), ENT_QUOTES, 'UTF-8') . '</h2>';
+    echo '<p>Native WHMCS media-server provisioning and lifecycle management.</p>';
     echo '<div class="row">';
+    captainfin_render_stat('Edition', $edition->shortLabel());
     captainfin_render_stat('Schema', $schemaHealthy ? 'Healthy' : 'Incomplete');
     captainfin_render_stat('Service bindings', (string) $bindings);
     captainfin_render_stat('Integration bindings', (string) $integrationBindings);
     captainfin_render_stat('Operations', (string) $operations);
     captainfin_render_stat('Unresolved operations', (string) $diagnostics['unresolved']);
     captainfin_render_stat('Manual attention', (string) $diagnostics['manual_attention']);
+    captainfin_render_stat('SKU', $edition->sku());
     echo '</div>';
 
     echo '<div class="alert alert-info" style="margin-top: 20px">';
-    echo '<strong>Development build.</strong> Jellyfin and Emby share the durable media-server lifecycle and recovery model. '
-        . 'Activity enforcement and cross-integration adapters remain under pre-license hardening.';
+    if ($edition->isDevelopment()) {
+        echo '<strong>Development build.</strong> ';
+    }
+    echo 'Installed capability: ' . htmlspecialchars($edition->shortLabel(), ENT_QUOTES, 'UTF-8') . '. '
+        . 'Safety operations remain available if an edition is downgraded, so suspended or terminated access can always converge.';
     echo '</div>';
     echo '</div>';
 }
