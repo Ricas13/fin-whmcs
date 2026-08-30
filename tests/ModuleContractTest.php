@@ -6,6 +6,7 @@ namespace CaptainFin\Whmcs\Tests;
 
 use CaptainFin\Whmcs\Domain\OperationState;
 use CaptainFin\Whmcs\Infrastructure\Database\Schema;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerType;
 use PHPUnit\Framework\TestCase;
 
 final class ModuleContractTest extends TestCase
@@ -55,14 +56,14 @@ final class ModuleContractTest extends TestCase
         self::assertTrue(function_exists('captainfin_activate'));
         self::assertTrue(function_exists('captainfin_upgrade'));
         self::assertTrue(function_exists('captainfin_deactivate'));
-        self::assertGreaterThanOrEqual(2, Schema::VERSION);
+        self::assertGreaterThanOrEqual(3, Schema::VERSION);
 
         $config = captainfin_config();
         self::assertSame('CAPTAiNFiN', $config['name']);
-        self::assertSame('0.2.0-dev', $config['version']);
+        self::assertSame('0.3.0-dev', $config['version']);
     }
 
-    public function testProductOptionsContainEstablishedJellyfinManagementBaseline(): void
+    public function testProductOptionsContainEstablishedMediaServerManagementBaseline(): void
     {
         require_once dirname(__DIR__) . '/modules/servers/captainfin/captainfin.php';
 
@@ -91,6 +92,16 @@ final class ModuleContractTest extends TestCase
         self::assertArrayNotHasKey('Default', $options['Allow Remote Access']);
         self::assertSame('yes', $options['Allow Subtitle Editing']['Default']);
         self::assertSame('yes', $options['Jellyseerr Access']['Default']);
+    }
+
+    public function testMediaServerSelectorDefaultsLegacyServersToJellyfinAndAllowsEmby(): void
+    {
+        self::assertSame(MediaServerType::JELLYFIN, MediaServerType::fromWhmcs([]));
+        self::assertSame(MediaServerType::JELLYFIN, MediaServerType::fromWhmcs(['serverusername' => 'jellyfin']));
+        self::assertSame(MediaServerType::EMBY, MediaServerType::fromWhmcs(['serverusername' => 'EmBy']));
+
+        $this->expectException(\InvalidArgumentException::class);
+        MediaServerType::fromWhmcs(['serverusername' => 'plex']);
     }
 
     public function testAddonShipsAutomaticReconciliationHook(): void
