@@ -28,6 +28,21 @@ final class BindingRepository
         string $username,
         string $state = 'active'
     ): object {
+        return $this->upsertMediaServerBinding('jellyfin', $params, $userId, $username, $state);
+    }
+
+    public function upsertMediaServerBinding(
+        string $provider,
+        array $params,
+        string $userId,
+        string $username,
+        string $state = 'active'
+    ): object {
+        $provider = mb_strtolower(trim($provider), 'UTF-8');
+        if (!in_array($provider, ['jellyfin', 'emby'], true)) {
+            throw new \InvalidArgumentException('Unsupported CAPTAiNFiN media server provider.');
+        }
+
         $serviceId = (int) ($params['serviceid'] ?? 0);
         if ($serviceId <= 0) {
             throw new \InvalidArgumentException('WHMCS service id is required for a binding.');
@@ -35,7 +50,13 @@ final class BindingRepository
 
         $now = (new DateTimeImmutable())->format('Y-m-d H:i:s');
         $identities = json_encode([
-            'jellyfin' => [
+            'media_server' => [
+                'provider' => $provider,
+                'user_id' => $userId,
+                'username' => $username,
+                'server_id' => (int) ($params['serverid'] ?? 0),
+            ],
+            $provider => [
                 'user_id' => $userId,
                 'username' => $username,
                 'server_id' => (int) ($params['serverid'] ?? 0),
@@ -46,6 +67,9 @@ final class BindingRepository
             throw new \RuntimeException('Unable to encode remote identity mapping.');
         }
 
+        // `jellyfin_user_id` is retained as transitional storage while the
+        // pre-release schema is migrated to a provider-neutral column. All new
+        // ownership information is provider-qualified in remote_identities_json.
         $existing = $this->findByServiceId($serviceId);
         if ($existing === null) {
             Capsule::table(self::TABLE)->insert([
@@ -81,6 +105,16 @@ final class BindingRepository
         }
 
         return $binding;
+    }
+
+    public function providerFor(object $binding): string
+    {
+        $decoded = json_decode((string) ($binding->remote_identities_json ?? ''), true);
+        $provider = is_array($decoded)
+            ? mb_strtolower(trim((string) ($decoded['media_server']['provider'] ?? '')), 'UTF-8')
+            : '';
+
+        return in_array($provider, ['jellyfin', 'emby'], true) ? $provider : 'jellyfin';
     }
 
     public function setState(int $serviceId, string $state): void
