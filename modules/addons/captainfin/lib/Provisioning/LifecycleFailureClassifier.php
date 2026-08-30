@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace CaptainFin\Whmcs\Provisioning;
 
-use CaptainFin\Whmcs\Integrations\Jellyfin\JellyfinException;
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerException;
 
 final class LifecycleFailureClassifier
 {
@@ -20,7 +20,7 @@ final class LifecycleFailureClassifier
             ];
         }
 
-        if ($error instanceof JellyfinException) {
+        if ($error instanceof MediaServerException) {
             if ($error->isRetryable()) {
                 return [
                     'action' => self::RETRY,
@@ -36,8 +36,9 @@ final class LifecycleFailureClassifier
 
         // Once a durable operation exists, local persistence/runtime errors are
         // safe to retry because every remote lifecycle path is required to be
-        // observation-driven/idempotent. This is what closes the remote-success
-        // -> local-failure gap instead of leaving a permanent unresolved row.
+        // observation-driven/idempotent. This closes remote-success -> local-
+        // failure gaps for both Jellyfin and Emby without provider-specific
+        // retry ownership.
         return [
             'action' => self::RETRY,
             'delay_seconds' => 300,
