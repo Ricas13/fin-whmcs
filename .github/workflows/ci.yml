@@ -74,3 +74,33 @@ jobs:
         env:
           CAPTAINFIN_TEST_JELLYFIN_IMAGE_TAG: ${{ matrix.jellyfin }}
         run: bash scripts/test-runtime.sh
+
+  emby-runtime:
+    name: Emby ${{ matrix.emby }} runtime
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Stable plus the current upstream beta protect both today's supported
+        # installation and the next API line without tracking an unpinned tag.
+        emby: ['4.9.5.0', '4.10.0.28']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: curl,json,mbstring,pdo_mysql
+          tools: composer:v2
+
+      - name: Install development dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run disposable Emby lifecycle runtime
+        env:
+          CAPTAINFIN_TEST_EMBY_IMAGE_TAG: ${{ matrix.emby }}
+        run: bash scripts/test-emby-runtime.sh
