@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace CaptainFin\Whmcs\Integrations\Jellyfin;
 
-final class JellyfinClient
+use CaptainFin\Whmcs\Integrations\MediaServer\MediaServerClient;
+
+final class JellyfinClient implements MediaServerClient
 {
     private HttpClient $http;
 
@@ -13,25 +15,26 @@ final class JellyfinClient
         $this->http = $http;
     }
 
+    public function providerName(): string
+    {
+        return 'jellyfin';
+    }
+
     public function systemInfo(): array
     {
         $result = $this->http->request('/System/Info', 'GET', null, 5);
-
         if (!is_array($result)) {
             throw new JellyfinException('Jellyfin returned an invalid system information response.');
         }
-
         return $result;
     }
 
     public function listUsers(): array
     {
         $result = $this->http->request('/Users');
-
         if (!is_array($result)) {
             throw new JellyfinException('Jellyfin returned an invalid user list.');
         }
-
         return array_values(array_filter($result, 'is_array'));
     }
 
@@ -42,11 +45,9 @@ final class JellyfinClient
             $this->listUsers(),
             fn (array $user): bool => $this->nameKey((string) ($user['Name'] ?? '')) === $needle
         ));
-
         if (count($matches) > 1) {
             throw new JellyfinException('Jellyfin returned multiple users with the same username.');
         }
-
         return $matches[0] ?? null;
     }
 
@@ -60,11 +61,9 @@ final class JellyfinClient
             }
             throw $error;
         }
-
         if (!is_array($result)) {
             throw new JellyfinException('Jellyfin returned an invalid user response.');
         }
-
         return $result;
     }
 
@@ -74,11 +73,9 @@ final class JellyfinClient
             'Name' => $username,
             'Password' => $password,
         ]);
-
         if (!is_array($result) || trim((string) ($result['Id'] ?? '')) === '') {
             throw new JellyfinException('Jellyfin did not return a user ID after account creation.');
         }
-
         return $result;
     }
 
@@ -98,10 +95,6 @@ final class JellyfinClient
             throw new JellyfinException('Jellyfin user response is missing configuration required for a safe rename.');
         }
 
-        // The canonical 10.11+ update route expects a complete UserDto and
-        // persists Configuration as part of the same operation. Re-send the
-        // observed DTO with only Name changed so a rename cannot accidentally
-        // reset customer preferences. /Users/{id} is legacy-only in v12.
         $current['Id'] = $userId;
         $current['Name'] = $username;
         $this->http->request('/Users?userId=' . rawurlencode($userId), 'POST', $current);
@@ -118,10 +111,6 @@ final class JellyfinClient
         if ($userId === '') {
             throw new \InvalidArgumentException('Jellyfin user ID is required for password changes.');
         }
-
-        // Jellyfin 10.11 and 12 both expose this route. The historical
-        // /Users/{userId}/Password form is retained only for backwards
-        // compatibility in v12, so use the canonical endpoint now.
         $this->http->request('/Users/Password?userId=' . rawurlencode($userId), 'POST', [
             'NewPw' => $password,
             'ResetPassword' => false,
@@ -140,7 +129,6 @@ final class JellyfinClient
         }
     }
 
-    /** @return array<int,array<string,mixed>> */
     public function listSessions(): array
     {
         $result = $this->http->request('/Sessions', 'GET', null, 7);
@@ -162,7 +150,6 @@ final class JellyfinClient
     public function listLibraries(): array
     {
         $result = $this->http->request('/Library/VirtualFolders', 'GET', null, 7);
-
         if (!is_array($result)) {
             throw new JellyfinException('Jellyfin did not return a valid library list.');
         }
@@ -178,7 +165,6 @@ final class JellyfinClient
                 $libraries[] = ['id' => $id, 'name' => $name];
             }
         }
-
         return $libraries;
     }
 
@@ -217,7 +203,6 @@ final class JellyfinClient
                 $normalised[$this->nameKey($name)] = $name;
             }
         }
-
         return array_values($normalised);
     }
 
